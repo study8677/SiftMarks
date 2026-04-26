@@ -1,0 +1,23 @@
+{
+  "name": "@siftmarks/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "siftmarks": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@siftmarks/shared": "*",
+    "@siftmarks/db": "*",
+    "@siftmarks/core": "*",
+    "@siftmarks/ai": "*",
+    "@siftmarks/indexer": "*",
+    "commander": "^12.1.0",
+    "chalk": "^5.3.0",
+    "ora": "^8.1.1"
+  }
+}

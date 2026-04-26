@@ -1,0 +1,22 @@
+{
+  "name": "siftmarks",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first AI bookmark manager with semantic search, cleanup PRs, and MCP support",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:packages": "npm run build -w packages/shared && npm run build -w packages/db && npm run build -w packages/ai && npm run build -w packages/core && npm run build -w packages/indexer && npm run build -w apps/cli && npm run build -w apps/mcp-server",
+    "build": "npm run build:packages && npm run build -w apps/web",
+    "dev": "npm run dev --workspace=apps/web -- -p 4399",
+    "cli": "node apps/cli/dist/index.js",
+    "lint": "eslint . --ext .ts,.tsx",
+    "typecheck": "tsc --build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

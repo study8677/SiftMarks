@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 380px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      color: #1a1a1a;
+      background: #fafafa;
+    }
+
+    .header {
+      background: #2563eb;
+      color: white;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header h1 { font-size: 16px; font-weight: 700; }
+    .header .lang-btn {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .header .lang-btn:hover { background: rgba(255,255,255,0.3); }
+
+    .offline {
+      background: #fef3c7;
+      color: #92400e;
+      padding: 10px 16px;
+      font-size: 12px;
+      display: none;
+    }
+    .offline a { color: #92400e; font-weight: 600; }
+
+    .section { padding: 12px 16px; border-bottom: 1px solid #e5e7eb; }
+    .section:last-child { border-bottom: none; }
+
+    /* Stats grid */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .stat-card {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+    }
+    .stat-card .num { font-size: 20px; font-weight: 700; color: #2563eb; }
+    .stat-card .label { font-size: 11px; color: #6b7280; margin-top: 2px; }
+
+    /* Actions */
+    .actions { display: flex; flex-direction: column; gap: 8px; }
+    .btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: white;
+      cursor: pointer;
+      font-size: 13px;
+      color: #1a1a1a;
+      transition: all 0.15s;
+      text-align: left;
+      width: 100%;
+    }
+    .btn:hover { border-color: #2563eb; background: #eff6ff; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn.primary {
+      background: #2563eb;
+      color: white;
+      border-color: #2563eb;
+    }
+    .btn.primary:hover { background: #1d4ed8; }
+    .btn .icon { font-size: 18px; }
+    .btn .text { flex: 1; }
+    .btn .desc { font-size: 11px; color: #6b7280; margin-top: 1px; }
+    .btn.primary .desc { color: rgba(255,255,255,0.7); }
+
+    /* Search */
+    .search-box {
+      display: flex;
+      gap: 6px;
+    }
+    .search-box input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+      background: white;
+    }
+    .search-box input:focus { border-color: #2563eb; }
+    .search-box button {
+      padding: 8px 14px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    /* Results */
+    .results { margin-top: 10px; }
+    .result-item {
+      padding: 8px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .result-item:last-child { border: none; }
+    .result-item a {
+      color: #1a1a1a;
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 13px;
+    }
+    .result-item a:hover { color: #2563eb; }
+    .result-item .url {
+      font-size: 11px;
+      color: #6b7280;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .result-item .tags {
+      display: flex;
+      gap: 4px;
+      margin-top: 3px;
+      flex-wrap: wrap;
+    }
+    .result-item .tag {
+      font-size: 10px;
+      padding: 1px 6px;
+      background: #dbeafe;
+      color: #2563eb;
+      border-radius: 4px;
+    }
+
+    .empty { color: #9ca3af; text-align: center; padding: 16px; font-size: 12px; }
+
+    .status-msg {
+      padding: 8px 16px;
+      font-size: 12px;
+      text-align: center;
+    }
+    .status-msg.success { background: #dcfce7; color: #166534; }
+    .status-msg.error { background: #fee2e2; color: #991b1b; }
+
+    .footer {
+      padding: 8px 16px;
+      text-align: center;
+      font-size: 11px;
+      color: #9ca3af;
+    }
+    .footer a { color: #2563eb; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>SiftMarks</h1>
+    <button class="lang-btn" id="langBtn">EN</button>
+  </div>
+
+  <div class="offline" id="offline">
+    <span id="offlineText">SiftMarks 服务未运行。请先启动：</span>
+    <code>npm run dev</code>
+  </div>
+
+  <div id="statusMsg" class="status-msg" style="display:none;"></div>
+
+  <div id="mainContent">
+    <!-- Stats -->
+    <div class="section">
+      <div class="stats" id="statsGrid">
+        <div class="stat-card"><div class="num" id="statBookmarks">-</div><div class="label" id="labelBookmarks">书签</div></div>
+        <div class="stat-card"><div class="num" id="statDuplicates">-</div><div class="label" id="labelDuplicates">重复</div></div>
+        <div class="stat-card"><div class="num" id="statTags">-</div><div class="label" id="labelTags">标签</div></div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="section">
+      <div class="actions">
+        <button class="btn primary" id="btnImport">
+          <span class="icon">📥</span>
+          <div>
+            <div class="text" id="importText">一键导入浏览器书签</div>
+            <div class="desc" id="importDesc">读取 Chrome 全部书签并导入 SiftMarks</div>
+          </div>
+        </button>
+        <button class="btn" id="btnSaveTab">
+          <span class="icon">📌</span>
+          <div>
+            <div class="text" id="saveTabText">保存当前页面</div>
+            <div class="desc" id="saveTabDesc">将当前标签页添加到 SiftMarks</div>
+          </div>
+        </button>
+        <button class="btn" id="btnRescue">
+          <span class="icon">🔧</span>
+          <div>
+            <div class="text" id="rescueText">书签整理</div>
+            <div class="desc" id="rescueDesc">查找重复、失效链接，生成清理建议</div>
+          </div>
+        </button>
+        <button class="btn" id="btnSyncBack" style="border-color:#16a34a;">
+          <span class="icon">🔄</span>
+          <div>
+            <div class="text" id="syncBackText" style="color:#16a34a;">同步回 Chrome</div>
+            <div class="desc" id="syncBackDesc">将整理结果写回浏览器书签栏</div>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="section">
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="搜索书签..." />
+        <button id="searchBtn" onclick="doSearch()">搜索</button>
+      </div>
+      <div class="results" id="results"></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <a href="http://localhost:4399" target="_blank" id="dashboardLink">打开 SiftMarks 面板</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

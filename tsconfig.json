@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/db" },
+    { "path": "packages/core" },
+    { "path": "packages/ai" },
+    { "path": "packages/indexer" },
+    { "path": "apps/cli" },
+    { "path": "apps/mcp-server" }
+  ]
+}

@@ -1,0 +1,226 @@
+export const zh = {
+  // Nav
+  nav: {
+    dashboard: '仪表盘',
+    import: '导入',
+    library: '书签库',
+    search: '搜索',
+    rescue: '整理',
+    settings: '设置',
+    mcp: 'MCP',
+  },
+
+  // Dashboard
+  dashboard: {
+    welcome: '欢迎使用 SiftMarks',
+    welcomeDesc: '把混乱的浏览器书签变成可搜索的 AI 记忆库。导入书签开始使用。',
+    importBtn: '导入书签',
+    needsRescue: '你的书签库需要整理。',
+    needsRescueDesc: (stats: { bookmarks: number; duplicates: number; broken: number; missingTags: number }) => {
+      let msg = `已导入 ${stats.bookmarks.toLocaleString()} 条书签。`;
+      if (stats.duplicates > 0) msg += `发现 ${stats.duplicates} 个重复链接。`;
+      if (stats.broken > 0) msg += `检测到 ${stats.broken} 个失效链接。`;
+      if (stats.missingTags > 0) msg += `${stats.missingTags} 条书签缺少标签。`;
+      return msg;
+    },
+    runRescue: '运行书签整理',
+    stats: {
+      bookmarks: '书签',
+      folders: '文件夹',
+      tags: '标签',
+      duplicates: '重复',
+      broken: '失效',
+      missingSummaries: '缺少摘要',
+      missingTags: '缺少标签',
+    },
+    actions: {
+      import: '导入书签',
+      importDesc: '上传浏览器导出的 bookmarks.html 文件',
+      rescue: '运行书签整理',
+      rescueDesc: '发现重复链接、失效链接，生成清理建议',
+      search: '搜索记忆',
+      searchDesc: '通过关键词或自然语言查找书签',
+      mcp: 'MCP 服务',
+      mcpDesc: '将书签连接到 AI 工具',
+    },
+  },
+
+  // Import
+  import: {
+    title: '导入书签',
+    desc: '上传浏览器导出的 bookmarks.html 文件。支持 Chrome、Firefox、Edge 和 Brave。',
+    dragDrop: '将 bookmarks.html 拖放到此处，或',
+    chooseFile: '选择文件',
+    importBtn: '导入书签',
+    importing: '导入中...',
+    complete: '导入完成！',
+    imported: '已导入',
+    folders: '文件夹',
+    duplicates: '重复',
+    missingTitles: '缺少标题',
+    viewLibrary: '查看书签库',
+    runRescue: '运行整理',
+    detected: '条书签已识别',
+    oneClick: '一键导入 →',
+    manualUpload: '或者手动上传 bookmarks.html 文件...',
+  },
+
+  // Library
+  library: {
+    title: '书签库',
+    noBookmarks: '暂无书签。',
+    importSome: '去导入？',
+    bookmarksCount: (n: number) => `${n} 条书签`,
+    filters: {
+      all: '全部',
+      untagged: '未标记',
+      duplicates: '重复',
+      broken: '失效',
+      missingSummary: '缺少摘要',
+    },
+    sidebar: {
+      status: '状态',
+      folders: '文件夹',
+      allFolders: '全部文件夹',
+      tags: '标签',
+      allTags: '全部标签',
+    },
+    untitled: '（无标题）',
+    dup: '重复',
+    broken: '失效',
+    prev: '上一页',
+    next: '下一页',
+    page: (current: number, total: number) => `第 ${current} 页，共 ${total} 页`,
+  },
+
+  // Search
+  search: {
+    title: '搜索',
+    placeholder: '用记忆搜索，而不是关键词...',
+    keyword: '关键词',
+    memory: '语义',
+    searchBtn: '搜索',
+    searching: '搜索中...',
+    noResults: '未找到匹配的书签。试试更宽泛的搜索或索引更多书签。',
+    examples: ['MCP 浏览器自动化', '本地优先应用', 'SQLite 向量搜索', 'AI 编程工具'],
+  },
+
+  // Rescue
+  rescue: {
+    title: '书签整理',
+    desc: '像审查 Pull Request 一样审查变更，确认后再应用。',
+    runScan: '运行整理扫描',
+    scanning: '扫描中...',
+    cleanupPR: (n: number) => `清理 PR：为你的书签库提出了 ${n} 项变更建议。`,
+    cleanupPRDesc: '逐一审查每项重命名、标记、移动和删除操作。',
+    acceptAllHigh: '接受全部高置信度建议',
+    acceptAll: (n: number) => `一键全部接受（${n} 条）`,
+    accepting: '正在接受...',
+    dismissAll: '全部忽略',
+    acceptAndSync: (n: number) => `一键全部接受，交给 Chrome 扩展同步（${n} 条）`,
+    syncToChrome: '查看扩展待同步',
+    syncingChrome: '正在检查待同步操作...',
+    syncDone: 'Chrome 扩展待同步操作已准备好',
+    syncRenamed: (n: number) => `${n} 个重命名`,
+    syncMoved: (n: number) => `${n} 个移动文件夹`,
+    syncRemoved: (n: number) => `${n} 个删除`,
+    syncBackup: (path: string) => `原始书签已备份到: ${path}`,
+    syncReady: (n: number) => `${n} 个 Chrome 书签操作已准备好。`,
+    syncUseExtension: '请打开 SiftMarks Chrome 扩展，点击「同步回 Chrome」来真正写入浏览器书签栏。',
+    syncNoOps: '没有需要写回 Chrome 的操作。',
+    noPending: '没有待处理的建议。你的书签很整洁！',
+    clickToScan: '点击「运行整理扫描」来发现改进空间。',
+    accept: '接受',
+    dismiss: '忽略',
+    confidence: (n: number) => `${n}% 置信度`,
+    types: {
+      merge_duplicate: '重复',
+      delete_broken: '失效链接',
+      rename: '重命名',
+      tag: '标签',
+      move: '文件夹',
+      normalize_tag: '标签规范化',
+    },
+    diff: {
+      removeTitle: (title: string) => `- ${title || '（空）'}`,
+      addTitle: (title: string) => `+ ${title}`,
+      removeBroken: '- 移除失效链接',
+      keepUrl: (url: string) => `+ 保留：${url}`,
+      addTags: (tags: string) => `+ 标签：${tags}`,
+    },
+  },
+
+  // Bookmark Detail
+  detail: {
+    back: '返回',
+    untitled: '（无标题）',
+    folder: '文件夹',
+    tags: '标签',
+    noTags: '暂无标签',
+    summary: 'AI 摘要',
+    description: '描述',
+    created: '创建时间',
+    imported: '导入时间',
+    save: '保存',
+    cancel: '取消',
+    delete: '删除',
+    notFound: '书签未找到',
+  },
+
+  // Settings
+  settings: {
+    title: '设置',
+    aiProvider: 'AI 服务',
+    providerType: '服务类型',
+    mock: 'Mock（无外部 AI）',
+    openai: 'OpenAI 兼容',
+    ollama: 'Ollama 兼容',
+    baseUrl: '接口地址',
+    apiKey: 'API 密钥',
+    chatModel: '对话模型',
+    embeddingModel: '向量模型',
+    save: '保存',
+    saving: '保存中...',
+    saved: '已保存！',
+    privacy: '隐私',
+    privacyDesc: 'SiftMarks 默认本地优先。除非你在上方配置了 AI 服务，否则不会向外部发送任何数据。',
+    currentProvider: '当前 AI 服务',
+    localOnly: '仅本地模式',
+    on: '开启',
+    off: '关闭',
+    dangerZone: '危险区域',
+    resetDB: '重置数据库',
+    resetDBDesc: '删除所有书签、标签和建议。',
+    reset: '重置',
+  },
+
+  // MCP
+  mcp: {
+    title: 'MCP 服务',
+    desc: '通过模型上下文协议（MCP）将你的书签连接到 Claude、Cursor、Windsurf 等 AI 工具。',
+    startServer: '启动服务',
+    startDesc: '运行以下命令启动 MCP 服务：',
+    claudeConfig: 'Claude Desktop 配置',
+    claudeConfigDesc: '添加到',
+    cursorConfig: 'Cursor 配置',
+    cursorConfigDesc: '添加到',
+    tools: '可用工具',
+    toolDescs: {
+      search_bookmarks: '通过关键词或自然语言搜索书签',
+      read_bookmark: '读取书签完整详情',
+      list_tags: '列出所有标签及数量',
+      list_folders: '列出所有文件夹及数量',
+      find_related_bookmarks: '查找与指定 URL 相关的书签',
+      summarize_collection: '按标签或文件夹汇总书签集合',
+      save_bookmark: '从 AI 保存新书签',
+      run_bookmark_rescue: '运行书签整理扫描',
+      get_bookmark_stats: '获取书签库统计数据',
+    },
+  },
+
+  common: {
+    loading: '加载中...',
+  },
+};
+
+export type Translations = typeof zh;

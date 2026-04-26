@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "SiftMarks",
+  "description": "把浏览器书签变成可搜索的 AI 记忆库",
+  "version": "0.1.0",
+  "permissions": [
+    "bookmarks",
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:4399/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
