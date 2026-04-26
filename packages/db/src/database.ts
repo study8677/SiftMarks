@@ -358,6 +358,10 @@ export class SiftMarksDB {
     this.db.prepare("DELETE FROM cleanup_suggestions WHERE status = 'pending'").run();
   }
 
+  clearPendingSuggestionsByType(type: CleanupType): void {
+    this.db.prepare("DELETE FROM cleanup_suggestions WHERE status = 'pending' AND type = ?").run(type);
+  }
+
   // --- Embeddings ---
 
   insertEmbedding(embedding: Embedding): void {

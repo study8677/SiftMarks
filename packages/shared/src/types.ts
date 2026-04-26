@@ -222,3 +222,26 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fetchConcurrency: 5,
   fetchTimeout: 10000,
 };
+
+// AI-generated, per-user bookmark taxonomy
+export interface BookmarkCategory {
+  name: string;
+  description: string;
+  examples: string[];
+}
+
+export interface BookmarkTaxonomy {
+  categories: BookmarkCategory[];
+  fallback: string;
+  language: 'zh' | 'en' | 'mixed';
+  generatedAt: string;
+  totalBookmarks: number;
+  model: string;
+}
+
+export interface ClassifyProgress {
+  phase: 'taxonomy-map' | 'taxonomy-reduce' | 'classify';
+  done: number;
+  total: number;
+  errors: number;
+}

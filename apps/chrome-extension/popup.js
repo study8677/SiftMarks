@@ -31,11 +31,11 @@ const i18n = {
     syncDone: (n) => `已同步 ${n} 条改动到 Chrome！`,
     syncNone: '没有待同步的改动。请先在面板中接受整理建议。',
     syncFailed: (a, f) => `同步完成：${a} 成功，${f} 失败`,
-    cleanupDone: (c) => `已整理书签栏：移动 ${c.moved} 条，删除 ${c.duplicatesRemoved} 个重复，清理 ${c.emptyFoldersRemoved} 个空文件夹`,
+    cleanupDone: (c) => `已整理书签栏：合并 ${c.duplicatesRemoved} 个重复，清理 ${c.emptyFoldersRemoved} 个空文件夹`,
     error: '操作失败，请检查服务是否运行',
     chromeCount: (n) => `Chrome 中共有 ${n} 条书签`,
     langBtn: 'EN',
-    confirmSync: '确定要整理 Chrome 书签栏吗？\n\n这将：\n• 应用已接受的重命名和移动\n• 合并重复 URL\n• 移除空文件夹\n• 把零散文件夹收敛到少数顶层分类\n\n如果 Chrome 开启同步，这些变化可能会同步到你的 Google 账号。',
+    confirmSync: '确定要把已接受的整理建议同步到 Chrome 吗？\n\n这将：\n• 应用已接受的重命名 / 移动 / 删除\n• 顺手合并明显重复的 URL\n• 移除清理后留下的空文件夹\n\n如果 Chrome 开启同步，这些变化可能会同步到你的 Google 账号。',
   },
   en: {
     bookmarks: 'Bookmarks',
@@ -66,11 +66,11 @@ const i18n = {
     syncDone: (n) => `Synced ${n} changes to Chrome!`,
     syncNone: 'No changes to sync. Accept suggestions in the dashboard first.',
     syncFailed: (a, f) => `Sync done: ${a} applied, ${f} failed`,
-    cleanupDone: (c) => `Organized bookmarks bar: moved ${c.moved}, removed ${c.duplicatesRemoved} duplicates, cleaned ${c.emptyFoldersRemoved} empty folders`,
+    cleanupDone: (c) => `Tidied bookmarks bar: merged ${c.duplicatesRemoved} duplicates, removed ${c.emptyFoldersRemoved} empty folders`,
     error: 'Failed. Is SiftMarks running?',
     chromeCount: (n) => `${n} bookmarks in Chrome`,
     langBtn: '中文',
-    confirmSync: 'Organize the Chrome bookmarks bar?\n\nThis will:\n• Apply accepted renames and moves\n• Merge duplicate URLs\n• Remove empty folders\n• Consolidate scattered folders into fewer top-level categories\n\nIf Chrome Sync is enabled, these changes may sync to your Google account.',
+    confirmSync: 'Sync accepted cleanup to Chrome?\n\nThis will:\n• Apply accepted rename / move / delete operations\n• Merge obvious duplicate URLs\n• Remove empty folders left behind\n\nIf Chrome Sync is enabled, these changes may sync to your Google account.',
   },
 };
 
@@ -211,8 +211,7 @@ document.getElementById('btnSyncBack').addEventListener('click', async () => {
   if (res.success) {
     const d = res.data;
     const hasCleanup = d.cleanup && (
-      d.cleanup.moved > 0
-      || d.cleanup.duplicatesRemoved > 0
+      d.cleanup.duplicatesRemoved > 0
       || d.cleanup.emptyFoldersRemoved > 0
     );
     if (d.total === 0 && !hasCleanup) {

@@ -136,24 +136,6 @@ function normalizeUrlForDedupe(url) {
   }
 }
 
-function classifyBookmark(title, url, path) {
-  const text = `${title} ${url} ${path}`.toLowerCase();
-
-  if (/deepsource|codeant|macroscope|verdent|ci|cicd|code review/.test(text)) return '代码CI-CD';
-  if (/racknerd|kiwivm|sub2api|tencent.*cls|cloud\.tencent|server|服务器/.test(text)) return '服务器云服务';
-  if (/chatgpt|gemini|notebooklm|mixboard|stitch|clawhub|openclaw|draw-nexus|diagrams\.net/.test(text)) return 'AI工具';
-  if (/openai.*agents|cookbook|copilot|aicoding|claude code|ai编程|ai coding/.test(text)) return 'AI开发';
-  if (/artificialanalysis|arena\.ai|kimi|mneb|mmeb|leaderboard|nvidia|模型|排行榜/.test(text)) return 'AI模型';
-  if (/huggingface.*dataset|msr-vtt|cl-bench|nature\.com|aamas|docs\.google\.com\/forms|论文|数据集|学术/.test(text)) return '学术资料';
-  if (/meituan|weekly|ruanyifeng|kexue|bestblogs|xiaoyuzhou|podcast|博客|播客|阅读/.test(text)) return '博客阅读';
-  if (/github\.com|leetcode|try|proxy|127\.0\.0\.1|开发|编程/.test(text)) return '开发工具';
-  if (/hicool|创业/.test(text)) return '创业项目';
-  if (/mail\.google|google\.com\/search|qlu|信息系统|常用/.test(text)) return '常用';
-  if (/nexsms|接码/.test(text)) return '接码平台';
-  if (/heipg|mac/.test(text)) return 'Mac资源';
-  return '其他';
-}
-
 async function getChromeTree() {
   return new Promise((resolve) => chrome.bookmarks.getTree(resolve));
 }
@@ -185,28 +167,6 @@ function collectBookmarkBarItems(root) {
   return { bookmarks, folders };
 }
 
-async function ensureTopLevelFolder(rootId, name, cache) {
-  if (cache.has(name)) return cache.get(name);
-
-  const created = await new Promise((resolve, reject) => {
-    chrome.bookmarks.create({ parentId: rootId, title: name }, (result) => {
-      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-      else resolve(result);
-    });
-  });
-  cache.set(name, created.id);
-  return created.id;
-}
-
-async function moveBookmark(id, parentId) {
-  return new Promise((resolve, reject) => {
-    chrome.bookmarks.move(id, { parentId }, (result) => {
-      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-      else resolve(result);
-    });
-  });
-}
-
 async function removeBookmarkTree(id) {
   return new Promise((resolve, reject) => {
     chrome.bookmarks.removeTree(id, () => {
@@ -216,21 +176,19 @@ async function removeBookmarkTree(id) {
   });
 }
 
+// Generic bookmark-bar tidying: remove duplicate URLs and empty folders.
+// All category-specific moves come from the server as `move` ops in the sync plan,
+// not from any classifier baked into the extension.
 async function cleanupBookmarkBar() {
   const tree = await getChromeTree();
   const bookmarkBar = getBookmarkBar(tree);
-  if (!bookmarkBar) return { moved: 0, duplicatesRemoved: 0, emptyFoldersRemoved: 0 };
+  if (!bookmarkBar) return { duplicatesRemoved: 0, emptyFoldersRemoved: 0 };
 
   const { bookmarks } = collectBookmarkBarItems(bookmarkBar);
   const byUrl = new Map();
   for (const item of bookmarks) {
     const key = normalizeUrlForDedupe(item.node.url);
-    const existing = byUrl.get(key);
-    const currentIsImport = item.path.join('/').includes('从 ChatGPT Atlas 导入');
-    const existingIsImport = existing?.path.join('/').includes('从 ChatGPT Atlas 导入');
-    if (!existing || (existingIsImport && !currentIsImport)) {
-      byUrl.set(key, item);
-    }
+    if (!byUrl.has(key)) byUrl.set(key, item);
   }
 
   let duplicatesRemoved = 0;
@@ -242,26 +200,8 @@ async function cleanupBookmarkBar() {
     }
   }
 
-  const freshTree = await getChromeTree();
-  const freshBar = getBookmarkBar(freshTree);
-  const freshItems = collectBookmarkBarItems(freshBar);
-  const topLevelFolders = new Map();
-  for (const child of freshBar.children || []) {
-    if (child.children) topLevelFolders.set(child.title, child.id);
-  }
-
-  let moved = 0;
-  for (const item of freshItems.bookmarks) {
-    const targetName = classifyBookmark(item.node.title, item.node.url, item.path.join('/'));
-    const targetFolderId = await ensureTopLevelFolder(freshBar.id, targetName, topLevelFolders);
-    if (item.node.parentId !== targetFolderId) {
-      await moveBookmark(item.node.id, targetFolderId);
-      moved++;
-    }
-  }
-
-  const afterMoveTree = await getChromeTree();
-  const afterMoveBar = getBookmarkBar(afterMoveTree);
+  const afterDedupeTree = await getChromeTree();
+  const afterDedupeBar = getBookmarkBar(afterDedupeTree);
   let emptyFoldersRemoved = 0;
 
   async function removeEmptyFolders(node) {
@@ -270,14 +210,14 @@ async function cleanupBookmarkBar() {
     }
 
     const refreshed = (await new Promise((resolve) => chrome.bookmarks.getSubTree(node.id, resolve)))[0];
-    if (refreshed.id !== afterMoveBar.id && refreshed.children && refreshed.children.length === 0) {
+    if (refreshed.id !== afterDedupeBar.id && refreshed.children && refreshed.children.length === 0) {
       await removeBookmarkTree(refreshed.id);
       emptyFoldersRemoved++;
     }
   }
 
-  await removeEmptyFolders(afterMoveBar);
-  return { moved, duplicatesRemoved, emptyFoldersRemoved };
+  await removeEmptyFolders(afterDedupeBar);
+  return { duplicatesRemoved, emptyFoldersRemoved };
 }
 
 // --- Sync back to Chrome ---
@@ -287,7 +227,8 @@ async function syncBackToChrome() {
   if (!response.ok) throw new Error('Failed to get sync operations');
   const { ops } = await response.json();
 
-  const cleanupOnly = !ops || ops.length === 0;
+  const hasOps = Array.isArray(ops) && ops.length > 0;
+  const hasRemovesOrMoves = hasOps && ops.some((op) => op.action === 'remove' || op.action === 'move');
 
   // Build folder map for move operations
   const folderMap = await buildFolderMap();
@@ -345,13 +286,17 @@ async function syncBackToChrome() {
     });
   }
 
-  const cleanup = await cleanupBookmarkBar();
+  // Only run dedupe + empty-folder cleanup when the user actually applied changes
+  // that could have created leftovers. Plain "check for ops" calls leave the bar alone.
+  const cleanup = hasRemovesOrMoves
+    ? await cleanupBookmarkBar()
+    : { duplicatesRemoved: 0, emptyFoldersRemoved: 0 };
 
   return {
     applied: syncedIds.length,
     failed,
     total: ops?.length ?? 0,
-    cleanupOnly,
+    hasOps,
     cleanup,
   };
 }
