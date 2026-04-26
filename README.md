@@ -4,9 +4,53 @@ English | [简体中文](./README.zh-CN.md)
 
 **Turn your messy browser bookmarks into a local AI memory library.**
 
+> Clean your bookmark bar. Search by memory. Give your AI tools a private knowledge base.
+
 SiftMarks is a local-first bookmark manager for people who save too much and find too little. It imports your Chrome bookmarks, cleans up duplicate and scattered folders, makes the library searchable, and exposes your saved knowledge to AI tools through MCP.
 
 The goal is simple: your bookmarks should feel like memory, not a junk drawer.
+
+SiftMarks is built for developers, researchers, operators, founders, and anyone whose browser has quietly become a second brain with no search function.
+
+## Preview
+
+![SiftMarks dashboard](./docs/screenshots/dashboard.png)
+
+## Demo Video
+
+Watch the 20-second product walkthrough:
+
+[![Watch the SiftMarks demo video](./docs/screenshots/dashboard.png)](./docs/demo/siftmarks-demo.mp4)
+
+<video src="./docs/demo/siftmarks-demo.mp4" controls width="100%"></video>
+
+If your Markdown viewer does not render embedded video, open [`docs/demo/siftmarks-demo.mp4`](./docs/demo/siftmarks-demo.mp4) directly.
+
+## Product Screenshots
+
+### Review Bookmark Cleanup Like A Pull Request
+
+Accept, dismiss, or batch-apply cleanup suggestions before anything touches Chrome.
+
+![Bookmark rescue review](./docs/screenshots/rescue.png)
+
+### Browse A Clean Local Bookmark Library
+
+Filter by status, folder, duplicate state, missing metadata, and saved context.
+
+![Bookmark library](./docs/screenshots/library.png)
+
+### Search By What You Remember
+
+Search saved pages by keyword now, with memory-style search ready for configured AI providers.
+
+![Bookmark search](./docs/screenshots/search.png)
+
+### Connect Bookmarks To AI Tools
+
+Expose your local bookmark library to Claude, Cursor, Windsurf, and other MCP clients.
+
+![MCP setup](./docs/screenshots/mcp.png)
 
 ## What It Does
 

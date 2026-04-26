@@ -4,9 +4,53 @@
 
 **把混乱的浏览器书签，变成你的本地 AI 记忆库。**
 
+> 清理书签栏。按记忆搜索。把你的私人知识库交给 AI 工具使用。
+
 SiftMarks 是一个本地优先的书签管理工具，适合那些“收藏很多，但真正要找时总是找不到”的人。它可以导入 Chrome 书签，清理重复链接和混乱文件夹，让书签库变得可搜索，并通过 MCP 把你保存过的知识交给 Claude、Cursor、Windsurf 等 AI 工具使用。
 
 它的目标很简单：书签不应该是杂物堆，而应该像记忆一样能被找回。
+
+SiftMarks 适合开发者、研究者、运营者、创业者，以及所有把浏览器当第二大脑、但早已被书签淹没的人。
+
+## 预览
+
+![SiftMarks 仪表盘](./docs/screenshots/dashboard.png)
+
+## 演示视频
+
+观看 20 秒产品演示：
+
+[![观看 SiftMarks 演示视频](./docs/screenshots/dashboard.png)](./docs/demo/siftmarks-demo.mp4)
+
+<video src="./docs/demo/siftmarks-demo.mp4" controls width="100%"></video>
+
+如果当前 Markdown 查看器不渲染内嵌视频，可以直接打开 [`docs/demo/siftmarks-demo.mp4`](./docs/demo/siftmarks-demo.mp4)。
+
+## 使用截图
+
+### 像审查 Pull Request 一样整理书签
+
+在真正改动 Chrome 之前，你可以先接受、忽略或批量应用整理建议。
+
+![书签整理审查](./docs/screenshots/rescue.png)
+
+### 浏览干净的本地书签库
+
+按状态、文件夹、重复情况、缺失摘要和保存上下文筛选书签。
+
+![书签库](./docs/screenshots/library.png)
+
+### 按你记得的内容搜索
+
+现在可以按关键词搜索；配置 AI Provider 后，可以继续扩展为更接近“记忆”的搜索方式。
+
+![书签搜索](./docs/screenshots/search.png)
+
+### 把书签连接到 AI 工具
+
+通过 MCP 把本地书签库接入 Claude、Cursor、Windsurf 等 AI 客户端。
+
+![MCP 配置](./docs/screenshots/mcp.png)
 
 ## 它能做什么
 
