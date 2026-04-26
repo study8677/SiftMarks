@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SiftMarks — AI 书签管理器",
-  description: "把混乱的浏览器书签变成可搜索的 AI 记忆库",
+  title: "SiftMarks",
+  description: "Local-first AI bookmark manager — turn messy browser bookmarks into a searchable memory library.",
 };
 
 export default function RootLayout({
@@ -26,6 +26,7 @@ export default function RootLayout({
   return (
     <html
       lang="zh"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">

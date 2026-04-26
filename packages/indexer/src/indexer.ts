@@ -16,6 +16,15 @@ export interface IndexOptions {
   onProgress?: (done: number, total: number, bookmark: Bookmark) => void;
 }
 
+export interface IndexResult {
+  processed: number;
+  summaries: number;
+  tags: number;
+  embeddings: number;
+  errors: number;
+  firstError: string | null;
+}
+
 /**
  * Index bookmarks: generate summaries, tags, and embeddings.
  */
@@ -23,7 +32,7 @@ export async function indexBookmarks(
   db: SiftMarksDB,
   provider: AIProvider,
   options: IndexOptions = {}
-): Promise<{ processed: number; summaries: number; tags: number; embeddings: number }> {
+): Promise<IndexResult> {
   const { limit = 100, onlyMissing = true, useAI = true, onProgress } = options;
 
   let bookmarks: Bookmark[];
@@ -37,6 +46,8 @@ export async function indexBookmarks(
   let summaries = 0;
   let tagsGenerated = 0;
   let embeddings = 0;
+  let errors = 0;
+  let firstError: string | null = null;
 
   for (let i = 0; i < bookmarks.length; i++) {
     const bookmark = bookmarks[i]!;
@@ -122,7 +133,10 @@ export async function indexBookmarks(
       db.updateBookmark(bookmark.id, { lastIndexedAt: nowISO() });
     } catch (err) {
       // AI failure should not block other bookmarks
-      console.error(`Failed to index bookmark ${bookmark.id}: ${err}`);
+      const message = err instanceof Error ? err.message : String(err);
+      errors++;
+      if (!firstError) firstError = message;
+      console.error(`Failed to index bookmark ${bookmark.id}: ${message}`);
 
       // Still index FTS without AI data
       const allTags = db.getBookmarkTags(bookmark.id).map((t) => t.name);
@@ -130,7 +144,7 @@ export async function indexBookmarks(
     }
   }
 
-  return { processed: bookmarks.length, summaries, tags: tagsGenerated, embeddings };
+  return { processed: bookmarks.length, summaries, tags: tagsGenerated, embeddings, errors, firstError };
 }
 
 /**

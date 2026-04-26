@@ -78,7 +78,9 @@ export function normalizeTagName(name: string): string {
     .replace(/^-|-$/g, '');
 }
 
-// Check if a title is vague/meaningless
+// Check if a title is vague/meaningless. Covers both Latin-script and Chinese
+// titles, since SiftMarks is bilingual and vague titles in either language
+// are equally useless for memory-style search.
 const VAGUE_TITLES = new Set([
   '',
   'untitled',
@@ -93,8 +95,34 @@ const VAGUE_TITLES = new Set([
   'page',
   'new tab',
   'sign in',
+  'sign up',
+  'log in',
   'login',
+  'register',
   'dashboard',
+  'main',
+  'overview',
+  // Chinese
+  '首页',
+  '主页',
+  '登录',
+  '注册',
+  '登入',
+  '登录页',
+  '无标题',
+  '未命名',
+  '新标签页',
+  '欢迎',
+  '关于',
+  '关于我们',
+  '百度一下',
+  '百度一下，你就知道',
+  '文档',
+  '帮助',
+  '后台',
+  '控制台',
+  '管理后台',
+  '页面',
 ]);
 
 export function isVagueTitle(title: string | null): boolean {

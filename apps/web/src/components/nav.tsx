@@ -14,6 +14,7 @@ export function Nav() {
     { href: '/library', label: t.nav.library },
     { href: '/search', label: t.nav.search },
     { href: '/rescue', label: t.nav.rescue },
+    { href: '/taxonomy', label: t.nav.taxonomy },
     { href: '/settings', label: t.nav.settings },
     { href: '/mcp', label: t.nav.mcp },
   ];
