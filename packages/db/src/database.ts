@@ -16,7 +16,7 @@ import type {
   CleanupType,
   CleanupStatus,
 } from '@siftmarks/shared';
-import { generateId, nowISO } from '@siftmarks/shared';
+import { cleanBookmarkSummary, generateId, MAX_BOOKMARK_TAGS, normalizeFolderPath, nowISO } from '@siftmarks/shared';
 
 export function getDataDir(): string {
   const envHome = process.env['SIFTMARKS_HOME'];
@@ -44,6 +44,9 @@ export class SiftMarksDB {
 
   initialize(): void {
     this.db.exec(SCHEMA_SQL);
+    this.normalizeStoredFolderPaths();
+    this.pruneAllBookmarkTags(MAX_BOOKMARK_TAGS);
+    this.pruneUnusedTags();
   }
 
   close(): void {
@@ -53,6 +56,11 @@ export class SiftMarksDB {
   // --- Bookmarks ---
 
   insertBookmark(bookmark: Bookmark): void {
+    const normalizedBookmark = {
+      ...bookmark,
+      folderPath: normalizeFolderPath(bookmark.folderPath) || null,
+    };
+
     this.db.prepare(`
       INSERT INTO bookmarks (
         id, url, normalized_url, title, original_title, description,
@@ -68,18 +76,18 @@ export class SiftMarksDB {
         @chromeId, @chromeParentId
       )
     `).run({
-      ...bookmark,
-      isDuplicate: bookmark.isDuplicate ? 1 : 0,
+      ...normalizedBookmark,
+      isDuplicate: normalizedBookmark.isDuplicate ? 1 : 0,
     });
   }
 
   getBookmarkById(id: string): Bookmark | undefined {
-    const row = this.db.prepare('SELECT * FROM bookmarks WHERE id = ?').get(id) as any;
+    const row = this.db.prepare(`SELECT ${this.bookmarkSelect('b')} FROM bookmarks b WHERE b.id = ?`).get(id) as any;
     return row ? this.rowToBookmark(row) : undefined;
   }
 
   getBookmarkByNormalizedUrl(normalizedUrl: string): Bookmark | undefined {
-    const row = this.db.prepare('SELECT * FROM bookmarks WHERE normalized_url = ? LIMIT 1').get(normalizedUrl) as any;
+    const row = this.db.prepare(`SELECT ${this.bookmarkSelect('b')} FROM bookmarks b WHERE b.normalized_url = ? LIMIT 1`).get(normalizedUrl) as any;
     return row ? this.rowToBookmark(row) : undefined;
   }
 
@@ -99,14 +107,26 @@ export class SiftMarksDB {
     if (status) {
       where += ' AND b.status = @status';
       params.status = status;
+    } else {
+      where += " AND b.status != 'deleted'";
     }
     if (folder) {
-      where += ' AND b.folder_path = @folder';
-      params.folder = folder;
+      const normalizedFolder = normalizeFolderPath(folder);
+      if (normalizedFolder) {
+        where += ' AND (b.folder_path = @folder OR b.folder_path LIKE @folderPrefix)';
+        params.folder = normalizedFolder;
+        params.folderPrefix = `${normalizedFolder}/%`;
+      }
     }
     if (isDuplicate !== undefined) {
-      where += ' AND b.is_duplicate = @isDuplicate';
-      params.isDuplicate = isDuplicate ? 1 : 0;
+      const operator = isDuplicate ? 'IN' : 'NOT IN';
+      where += ` AND b.normalized_url ${operator} (
+        SELECT normalized_url
+        FROM bookmarks
+        WHERE status != 'deleted'
+        GROUP BY normalized_url
+        HAVING COUNT(*) > 1
+      )`;
     }
 
     let query: string;
@@ -114,7 +134,7 @@ export class SiftMarksDB {
 
     if (tag) {
       query = `
-        SELECT b.* FROM bookmarks b
+        SELECT ${this.bookmarkSelect('b')} FROM bookmarks b
         JOIN bookmark_tags bt ON bt.bookmark_id = b.id
         JOIN tags t ON t.id = bt.tag_id
         ${where} AND t.normalized_name = @tag
@@ -130,7 +150,7 @@ export class SiftMarksDB {
       params.tag = tag;
     } else {
       query = `
-        SELECT b.* FROM bookmarks b
+        SELECT ${this.bookmarkSelect('b')} FROM bookmarks b
         ${where}
         ORDER BY b.imported_at DESC
         LIMIT @limit OFFSET @offset
@@ -158,6 +178,8 @@ export class SiftMarksDB {
     const params: any = { id };
 
     const fieldMap: Record<string, string> = {
+      url: 'url',
+      normalizedUrl: 'normalized_url',
       title: 'title',
       description: 'description',
       contentText: 'content_text',
@@ -178,7 +200,11 @@ export class SiftMarksDB {
       if (key in updates) {
         fields.push(`${col} = @${key}`);
         const val = (updates as any)[key];
-        params[key] = key === 'isDuplicate' ? (val ? 1 : 0) : val;
+        params[key] = key === 'isDuplicate'
+          ? (val ? 1 : 0)
+          : key === 'folderPath'
+            ? normalizeFolderPath(val) || null
+            : val;
       }
     }
 
@@ -216,6 +242,23 @@ export class SiftMarksDB {
     return rows.map((r) => this.rowToBookmark(r));
   }
 
+  getBookmarksNeedingAnalysis(limit: number = 100): Bookmark[] {
+    const rows = this.db.prepare(`
+      SELECT b.* FROM bookmarks b
+      WHERE b.status != ?
+        AND (
+          b.content_text IS NULL
+          OR b.summary IS NULL
+          OR NOT EXISTS (
+            SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id
+          )
+        )
+      ORDER BY b.imported_at DESC
+      LIMIT ?
+    `).all('deleted', limit) as any[];
+    return rows.map((r) => this.rowToBookmark(r));
+  }
+
   getUncheckedBookmarks(limit: number = 100): Bookmark[] {
     const rows = this.db.prepare(
       'SELECT * FROM bookmarks WHERE status = ? LIMIT ?'
@@ -233,26 +276,78 @@ export class SiftMarksDB {
   }
 
   getTagByNormalizedName(normalizedName: string): Tag | undefined {
-    return this.db.prepare('SELECT * FROM tags WHERE normalized_name = ?').get(normalizedName) as Tag | undefined;
+    const row = this.db.prepare('SELECT * FROM tags WHERE normalized_name = ?').get(normalizedName) as any;
+    return row ? this.rowToTag(row) : undefined;
+  }
+
+  getTagById(id: string): Tag | undefined {
+    const row = this.db.prepare('SELECT * FROM tags WHERE id = ?').get(id) as any;
+    return row ? this.rowToTag(row) : undefined;
   }
 
   listTags(): Array<Tag & { count: number }> {
-    return this.db.prepare(`
+    const rows = this.db.prepare(`
       SELECT t.*, COUNT(bt.bookmark_id) as count
       FROM tags t
-      LEFT JOIN bookmark_tags bt ON bt.tag_id = t.id
+      JOIN bookmark_tags bt ON bt.tag_id = t.id
+      JOIN bookmarks b ON b.id = bt.bookmark_id AND b.status != 'deleted'
       GROUP BY t.id
-      ORDER BY count DESC
-    `).all() as Array<Tag & { count: number }>;
+      ORDER BY count DESC, LOWER(t.name) ASC
+    `).all() as any[];
+
+    return rows.map((row) => ({
+      ...this.rowToTag(row),
+      count: row.count,
+    }));
+  }
+
+  updateTag(id: string, updates: Pick<Tag, 'name' | 'normalizedName'>): void {
+    this.db.prepare(`
+      UPDATE tags
+      SET name = @name, normalized_name = @normalizedName
+      WHERE id = @id
+    `).run({ id, ...updates });
+  }
+
+  deleteTag(id: string): void {
+    this.db.prepare('DELETE FROM tags WHERE id = ?').run(id);
+  }
+
+  getBookmarkIdsForTag(tagId: string): string[] {
+    const rows = this.db.prepare(`
+      SELECT bookmark_id FROM bookmark_tags WHERE tag_id = ?
+    `).all(tagId) as Array<{ bookmark_id: string }>;
+    return rows.map((row) => row.bookmark_id);
+  }
+
+  getBookmarkIdsForTags(tagIds: string[]): string[] {
+    if (tagIds.length === 0) return [];
+
+    const placeholders = tagIds.map(() => '?').join(', ');
+    const rows = this.db.prepare(`
+      SELECT DISTINCT bookmark_id FROM bookmark_tags WHERE tag_id IN (${placeholders})
+    `).all(...tagIds) as Array<{ bookmark_id: string }>;
+    return rows.map((row) => row.bookmark_id);
   }
 
   // --- BookmarkTags ---
 
-  addBookmarkTag(bookmarkTag: BookmarkTag): void {
-    this.db.prepare(`
+  addBookmarkTag(bookmarkTag: BookmarkTag): boolean {
+    const exists = this.db.prepare(`
+      SELECT 1 FROM bookmark_tags WHERE bookmark_id = ? AND tag_id = ? LIMIT 1
+    `).get(bookmarkTag.bookmarkId, bookmarkTag.tagId);
+    if (exists) return false;
+
+    const currentCount = (this.db.prepare(`
+      SELECT COUNT(*) as count FROM bookmark_tags WHERE bookmark_id = ?
+    `).get(bookmarkTag.bookmarkId) as { count: number }).count;
+    if (currentCount >= MAX_BOOKMARK_TAGS) return false;
+
+    const result = this.db.prepare(`
       INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag_id, source, confidence)
       VALUES (@bookmarkId, @tagId, @source, @confidence)
     `).run(bookmarkTag);
+    return result.changes > 0;
   }
 
   getBookmarkTags(bookmarkId: string): Array<Tag & { source: string; confidence: number | null }> {
@@ -261,11 +356,61 @@ export class SiftMarksDB {
       FROM tags t
       JOIN bookmark_tags bt ON bt.tag_id = t.id
       WHERE bt.bookmark_id = ?
+      ORDER BY
+        CASE bt.source WHEN 'user' THEN 0 WHEN 'ai' THEN 1 ELSE 2 END,
+        COALESCE(bt.confidence, 0) DESC,
+        t.name ASC
+      LIMIT ${MAX_BOOKMARK_TAGS}
     `).all(bookmarkId) as any[];
   }
 
   removeBookmarkTag(bookmarkId: string, tagId: string): void {
     this.db.prepare('DELETE FROM bookmark_tags WHERE bookmark_id = ? AND tag_id = ?').run(bookmarkId, tagId);
+  }
+
+  private pruneAllBookmarkTags(maxTags: number): void {
+    this.db.prepare(`
+      DELETE FROM bookmark_tags
+      WHERE rowid IN (
+        SELECT rowid FROM (
+          SELECT
+            bt.rowid,
+            ROW_NUMBER() OVER (
+              PARTITION BY bt.bookmark_id
+              ORDER BY
+                CASE bt.source WHEN 'user' THEN 0 WHEN 'ai' THEN 1 ELSE 2 END,
+                COALESCE(bt.confidence, 0) DESC,
+                t.name ASC
+            ) AS tag_rank
+          FROM bookmark_tags bt
+          JOIN tags t ON t.id = bt.tag_id
+        )
+        WHERE tag_rank > ?
+      )
+    `).run(maxTags);
+  }
+
+  private pruneUnusedTags(): void {
+    this.db.prepare(`
+      DELETE FROM tags
+      WHERE NOT EXISTS (
+        SELECT 1 FROM bookmark_tags bt WHERE bt.tag_id = tags.id
+      )
+    `).run();
+  }
+
+  private normalizeStoredFolderPaths(): void {
+    const rows = this.db.prepare(`
+      SELECT id, folder_path FROM bookmarks WHERE folder_path IS NOT NULL
+    `).all() as Array<{ id: string; folder_path: string | null }>;
+
+    const update = this.db.prepare('UPDATE bookmarks SET folder_path = ? WHERE id = ?');
+    for (const row of rows) {
+      const normalized = normalizeFolderPath(row.folder_path) || null;
+      if (normalized !== row.folder_path) {
+        update.run(normalized, row.id);
+      }
+    }
   }
 
   // --- Folders ---
@@ -278,13 +423,61 @@ export class SiftMarksDB {
   }
 
   listFolders(): Array<Folder & { count: number }> {
-    return this.db.prepare(`
-      SELECT f.*, COUNT(b.id) as count
-      FROM folders f
-      LEFT JOIN bookmarks b ON b.folder_path = f.path
-      GROUP BY f.id
-      ORDER BY f.path
+    const rows = this.db.prepare('SELECT * FROM folders').all() as any[];
+    const countRows = this.db.prepare(`
+      SELECT folder_path, COUNT(*) as count
+      FROM bookmarks
+      WHERE folder_path IS NOT NULL
+        AND TRIM(folder_path) != ''
+        AND status != 'deleted'
+      GROUP BY folder_path
     `).all() as any[];
+    const byPath = new Map<string, Folder & { count: number }>();
+    const fallbackCreatedAt = nowISO();
+
+    const ensureFolder = (rawPath: string | null | undefined, createdAt?: string): (Folder & { count: number }) | undefined => {
+      const path = normalizeFolderPath(rawPath);
+      if (!path) return undefined;
+
+      const existing = byPath.get(path);
+      if (existing) return existing;
+
+      const parts = path.split('/');
+      const name = parts[parts.length - 1] ?? path;
+      const parentPath = parts.length > 1 ? parts.slice(0, -1).join('/') : null;
+      const folder = {
+        id: `folder:${path}`,
+        path,
+        name,
+        parentPath,
+        createdAt: createdAt ?? fallbackCreatedAt,
+        count: 0,
+      };
+
+      byPath.set(path, folder);
+      if (parentPath) ensureFolder(parentPath, createdAt);
+      return folder;
+    };
+
+    for (const row of rows) {
+      ensureFolder(row.path, row.created_at);
+    }
+
+    for (const row of countRows) {
+      const path = normalizeFolderPath(row.folder_path);
+      if (!path) continue;
+
+      const count = Number(row.count ?? 0);
+      const parts = path.split('/');
+      for (let i = parts.length; i >= 1; i--) {
+        const folder = ensureFolder(parts.slice(0, i).join('/'));
+        if (folder) folder.count += count;
+      }
+    }
+
+    return [...byPath.values()]
+      .filter((folder) => folder.count > 0)
+      .sort((a, b) => a.path.localeCompare(b.path));
   }
 
   // --- Cleanup Suggestions ---
@@ -316,6 +509,7 @@ export class SiftMarksDB {
       where += ' AND status = @status';
       params.status = status;
     }
+    where += " AND type != 'merge_duplicate'";
     if (type) {
       where += ' AND type = @type';
       params.type = type;
@@ -445,16 +639,39 @@ export class SiftMarksDB {
 
   getStats(): BookmarkStats {
     const bookmarks = (this.db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE status != 'deleted'").get() as any).c;
-    const folders = (this.db.prepare('SELECT COUNT(*) as c FROM folders').get() as any).c;
-    const tags = (this.db.prepare('SELECT COUNT(*) as c FROM tags').get() as any).c;
-    const duplicates = (this.db.prepare('SELECT COUNT(*) as c FROM bookmarks WHERE is_duplicate = 1').get() as any).c;
-    const broken = (this.db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE status = 'broken'").get() as any).c;
-    const missingSummaries = (this.db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE summary IS NULL AND status != 'deleted'").get() as any).c;
-    const missingTags = (this.db.prepare(`
-      SELECT COUNT(*) as c FROM bookmarks b
-      LEFT JOIN bookmark_tags bt ON bt.bookmark_id = b.id
-      WHERE bt.bookmark_id IS NULL AND b.status != 'deleted'
+    const folders = this.listFolders().length;
+    const tags = (this.db.prepare(`
+      SELECT COUNT(DISTINCT bt.tag_id) as c
+      FROM bookmark_tags bt
+      JOIN bookmarks b ON b.id = bt.bookmark_id
+      WHERE b.status != 'deleted'
     `).get() as any).c;
+    const duplicates = (this.db.prepare(`
+      SELECT COALESCE(SUM(c - 1), 0) as c
+      FROM (
+        SELECT COUNT(*) as c
+        FROM bookmarks
+        WHERE status != 'deleted'
+        GROUP BY normalized_url
+        HAVING COUNT(*) > 1
+      )
+    `).get() as any).c;
+    const broken = (this.db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE status = 'broken'").get() as any).c;
+    const missingSummaries = (this.db.prepare(`
+      SELECT COUNT(*) as c
+      FROM bookmarks b
+      WHERE b.summary IS NULL
+        AND b.description IS NULL
+        AND b.status != 'deleted'
+        AND b.normalized_url NOT IN (
+          SELECT normalized_url
+          FROM bookmarks
+          WHERE status != 'deleted'
+          GROUP BY normalized_url
+          HAVING COUNT(*) > 1
+        )
+    `).get() as any).c;
+    const missingTags = 0;
 
     return { bookmarks, folders, tags, duplicates, broken, missingSummaries, missingTags };
   }
@@ -467,21 +684,45 @@ export class SiftMarksDB {
 
   // --- Row mapping ---
 
+  private rowToTag(row: any): Tag {
+    return {
+      id: row.id,
+      name: row.name,
+      normalizedName: row.normalized_name,
+      createdAt: row.created_at,
+    };
+  }
+
+  private bookmarkSelect(alias: string): string {
+    return `${alias}.*, CASE WHEN (
+      SELECT COUNT(*)
+      FROM bookmarks d
+      WHERE d.status != 'deleted' AND d.normalized_url = ${alias}.normalized_url
+    ) > 1 THEN 1 ELSE 0 END AS actual_is_duplicate`;
+  }
+
   private rowToBookmark(row: any): Bookmark {
+    const folderPath = normalizeFolderPath(row.folder_path) || null;
+    const summaryContext = {
+      title: row.title,
+      url: row.url,
+      folderPath,
+    };
+
     return {
       id: row.id,
       url: row.url,
       normalizedUrl: row.normalized_url,
       title: row.title,
       originalTitle: row.original_title,
-      description: row.description,
+      description: cleanBookmarkSummary(row.description, null, 160, summaryContext),
       contentText: row.content_text,
-      summary: row.summary,
-      folderPath: row.folder_path,
+      summary: cleanBookmarkSummary(row.summary, row.description, 180, summaryContext),
+      folderPath,
       faviconUrl: row.favicon_url,
       status: row.status,
       httpStatus: row.http_status,
-      isDuplicate: row.is_duplicate === 1,
+      isDuplicate: row.actual_is_duplicate !== undefined ? row.actual_is_duplicate === 1 : row.is_duplicate === 1,
       duplicateGroupId: row.duplicate_group_id,
       createdAt: row.created_at,
       importedAt: row.imported_at,

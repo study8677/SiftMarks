@@ -8,6 +8,8 @@ function loadSettings(): AppSettings {
   const aiProvider: AIProviderConfig = aiProviderStr
     ? JSON.parse(aiProviderStr)
     : DEFAULT_SETTINGS.aiProvider;
+  const folderDepth = Number(db.getSetting('folderDepth'));
+  const topLevelFolderLimit = Number(db.getSetting('topLevelFolderLimit'));
 
   return {
     ...DEFAULT_SETTINGS,
@@ -16,6 +18,10 @@ function loadSettings(): AppSettings {
     enableBrokenLinkChecking: db.getSetting('enableBrokenLinkChecking') !== 'false',
     enableMcpServer: db.getSetting('enableMcpServer') === 'true',
     localOnlyMode: db.getSetting('localOnlyMode') !== 'false',
+    folderDepth: folderDepth === 2 ? 2 : 1,
+    topLevelFolderLimit: Number.isFinite(topLevelFolderLimit)
+      ? Math.min(Math.max(Math.round(topLevelFolderLimit), 3), 50)
+      : DEFAULT_SETTINGS.topLevelFolderLimit,
   };
 }
 
@@ -37,7 +43,25 @@ export async function PATCH(request: Request) {
   const db = getDB();
 
   if (body.aiProvider) {
-    db.setSetting('aiProvider', JSON.stringify(body.aiProvider));
+    const currentStr = db.getSetting('aiProvider');
+    const current: AIProviderConfig | null = currentStr ? JSON.parse(currentStr) : null;
+    const next: AIProviderConfig = { ...body.aiProvider };
+
+    if (
+      next.type === 'openai-compatible' &&
+      current?.type === 'openai-compatible' &&
+      !next.apiKey &&
+      current.apiKey &&
+      !body.clearApiKey
+    ) {
+      next.apiKey = current.apiKey;
+    }
+
+    if (body.clearApiKey) {
+      delete next.apiKey;
+    }
+
+    db.setSetting('aiProvider', JSON.stringify(next));
   }
   if (body.enableContentFetching !== undefined) {
     db.setSetting('enableContentFetching', String(body.enableContentFetching));
@@ -50,6 +74,14 @@ export async function PATCH(request: Request) {
   }
   if (body.localOnlyMode !== undefined) {
     db.setSetting('localOnlyMode', String(body.localOnlyMode));
+  }
+  if (body.folderDepth !== undefined) {
+    db.setSetting('folderDepth', Number(body.folderDepth) === 2 ? '2' : '1');
+  }
+  if (body.topLevelFolderLimit !== undefined) {
+    const value = Number(body.topLevelFolderLimit);
+    const normalized = Number.isFinite(value) ? Math.min(Math.max(Math.round(value), 3), 50) : DEFAULT_SETTINGS.topLevelFolderLimit;
+    db.setSetting('topLevelFolderLimit', String(normalized));
   }
 
   return NextResponse.json({ ok: true });

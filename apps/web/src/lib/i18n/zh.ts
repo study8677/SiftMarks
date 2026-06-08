@@ -1,11 +1,12 @@
 export const zh = {
   // Nav
   nav: {
-    dashboard: '仪表盘',
-    import: '导入',
-    library: '书签库',
-    search: '搜索',
-    rescue: '整理',
+    dashboard: '首页',
+    import: '导入书签',
+    library: '我的书签',
+    tags: '标签',
+    search: '智能搜索',
+    rescue: '整理建议',
     taxonomy: '分类方案',
     settings: '设置',
     mcp: 'MCP',
@@ -14,33 +15,31 @@ export const zh = {
   // Dashboard
   dashboard: {
     welcome: '欢迎使用 SiftMarks',
-    welcomeDesc: '把混乱的浏览器书签变成可搜索的 AI 记忆库。导入书签开始使用。',
+    welcomeDesc: '本地优先的 AI 书签管家：持续管理收藏、整理、搜索、纠错和同步。',
     importBtn: '导入书签',
-    needsRescue: '你的书签库需要整理。',
-    needsRescueDesc: (stats: { bookmarks: number; duplicates: number; broken: number; missingTags: number }) => {
+    needsRescue: '你的书签库有待整理项。',
+    needsRescueDesc: (stats: { bookmarks: number; broken: number }) => {
       let msg = `已导入 ${stats.bookmarks.toLocaleString()} 条书签。`;
-      if (stats.duplicates > 0) msg += `发现 ${stats.duplicates} 个重复链接。`;
       if (stats.broken > 0) msg += `检测到 ${stats.broken} 个失效链接。`;
-      if (stats.missingTags > 0) msg += `${stats.missingTags} 条书签缺少标签。`;
       return msg;
     },
-    runRescue: '运行书签整理',
+    runRescue: '查看整理建议',
     stats: {
       bookmarks: '书签',
       folders: '文件夹',
       tags: '标签',
-      duplicates: '重复',
+      duplicates: '已存在跳过',
       broken: '失效',
       missingSummaries: '缺少摘要',
       missingTags: '缺少标签',
     },
     actions: {
-      import: '导入书签',
-      importDesc: '上传浏览器导出的 bookmarks.html 文件',
-      rescue: '运行书签整理',
-      rescueDesc: '发现重复链接、失效链接，生成清理建议',
-      search: '搜索记忆',
-      searchDesc: '通过关键词或自然语言查找书签',
+      import: '保存 / 导入书签',
+      importDesc: '把浏览器书签进入本地库，再异步理解内容',
+      rescue: '处理整理建议',
+      rescueDesc: '接受、修改或忽略重命名、标签和坏链建议',
+      search: '智能搜索',
+      searchDesc: '不记得标题时，用网页用途和内容来搜',
       mcp: 'MCP 服务',
       mcpDesc: '将书签连接到 AI 工具',
     },
@@ -55,12 +54,12 @@ export const zh = {
     importBtn: '导入书签',
     importing: '导入中...',
     complete: '导入完成！',
-    imported: '已导入',
+    imported: '新导入书签',
     folders: '文件夹',
-    duplicates: '重复',
+    duplicates: '已存在跳过',
     missingTitles: '缺少标题',
     viewLibrary: '查看书签库',
-    runRescue: '运行整理',
+    runRescue: '审查建议',
     detected: '条书签已识别',
     oneClick: '一键导入 →',
     manualUpload: '或者手动上传 bookmarks.html 文件...',
@@ -75,7 +74,7 @@ export const zh = {
     filters: {
       all: '全部',
       untagged: '未标记',
-      duplicates: '重复',
+      duplicates: '已存在',
       broken: '失效',
       missingSummary: '缺少摘要',
     },
@@ -87,7 +86,7 @@ export const zh = {
       allTags: '全部标签',
     },
     untitled: '（无标题）',
-    dup: '重复',
+    dup: '已存在',
     broken: '失效',
     prev: '上一页',
     next: '下一页',
@@ -96,10 +95,10 @@ export const zh = {
 
   // Search
   search: {
-    title: '搜索',
-    placeholder: '用记忆搜索，而不是关键词...',
+    title: '智能搜索',
+    placeholder: '我不记得标题，但我记得它是干什么的...',
     keyword: '关键词',
-    memory: '语义',
+    memory: '语义 / 记忆',
     searchBtn: '搜索',
     searching: '搜索中...',
     noResults: '未找到匹配的书签。试试更宽泛的搜索或索引更多书签。',
@@ -108,9 +107,9 @@ export const zh = {
 
   // Rescue
   rescue: {
-    title: '书签整理',
-    desc: '像审查 Pull Request 一样审查变更，确认后再应用。',
-    runScan: '运行整理扫描',
+    title: '整理建议',
+    desc: '像审查 Pull Request 一样审查 AI 对书签提出的整理和纠错建议，确认后再应用。',
+    runScan: '生成整理建议',
     scanning: '扫描中...',
     cleanupPR: (n: number) => `清理 PR：为你的书签库提出了 ${n} 项变更建议。`,
     cleanupPRDesc: '逐一审查每项重命名、标记、移动和删除操作。',
@@ -130,12 +129,12 @@ export const zh = {
     syncUseExtension: '请打开 SiftMarks Chrome 扩展，点击「同步回 Chrome」来真正写入浏览器书签栏。',
     syncNoOps: '没有需要写回 Chrome 的操作。',
     noPending: '没有待处理的建议。你的书签很整洁！',
-    clickToScan: '点击「运行整理扫描」来发现改进空间。',
+    clickToScan: '点击「生成整理建议」来发现改进空间。',
     accept: '接受',
     dismiss: '忽略',
     confidence: (n: number) => `${n}% 置信度`,
     types: {
-      merge_duplicate: '重复',
+      merge_duplicate: '已存在',
       delete_broken: '失效链接',
       rename: '重命名',
       tag: '标签',
@@ -214,7 +213,7 @@ export const zh = {
       find_related_bookmarks: '查找与指定 URL 相关的书签',
       summarize_collection: '按标签或文件夹汇总书签集合',
       save_bookmark: '从 AI 保存新书签',
-      run_bookmark_rescue: '运行书签整理扫描',
+      run_bookmark_rescue: '生成书签整理建议',
       get_bookmark_stats: '获取书签库统计数据',
     },
   },
@@ -222,7 +221,7 @@ export const zh = {
   // Taxonomy
   taxonomy: {
     title: 'AI 分类方案',
-    desc: '让 AI 根据你的书签库生成一套专属分类，再一键给所有书签建议归位。整个过程不会直接修改 Chrome，所有移动建议会进入「整理」页等你审核。',
+    desc: '让 AI 根据你的书签库生成一套专属分类，再一键给所有书签建议归位。整个过程不会直接修改 Chrome，所有移动建议会进入「整理建议」页等你审核。',
     notGeneratedYet: '还没有为你的库生成过分类方案。点击下方按钮，AI 会读取你全部书签并提议 8-15 个适合你内容的类别。',
     libraryEmpty: '书签库还是空的。先去「导入」一些书签再回来。',
     generate: '生成 AI 分类方案',
@@ -234,7 +233,7 @@ export const zh = {
     appliedSummary: (created: number, total: number) => `已为 ${created} / ${total} 条书签生成移动建议。`,
     appliedSkipped: (n: number) => `${n} 条书签已经在正确分类下，跳过。`,
     appliedErrors: (n: number) => `${n} 个批次分类失败，已使用兜底类别。`,
-    viewSuggestions: '前往「整理」审核',
+    viewSuggestions: '前往「整理建议」审核',
     deleteAll: '删除当前方案',
     confirmDelete: '确定要删除当前的分类方案？',
     summary: (n: number, model: string, when: string) => `共 ${n} 个类别 · 模型 ${model} · 生成于 ${when}`,

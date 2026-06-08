@@ -5,16 +5,22 @@ import type {
   AITitleResult,
   Bookmark,
 } from '@siftmarks/shared';
+import { cleanBookmarkSummary, extractJSONFromAIText } from '@siftmarks/shared';
 
 export interface AIProvider {
   readonly name: string;
 
   summarizeBookmark(bookmark: Bookmark): Promise<AISummaryResult>;
-  generateTags(bookmark: Bookmark): Promise<AITagResult>;
+  generateTags(bookmark: Bookmark, options?: AITagOptions): Promise<AITagResult>;
   suggestBetterTitle(bookmark: Bookmark): Promise<AITitleResult>;
   generateEmbedding(text: string): Promise<number[]>;
   rewriteSearchQuery(query: string): Promise<string>;
   chat(messages: Array<{ role: string; content: string }>): Promise<string>;
+}
+
+export interface AITagOptions {
+  existingTags?: string[];
+  maxTags?: number;
 }
 
 // --- Mock Provider ---
@@ -24,12 +30,12 @@ export class MockProvider implements AIProvider {
 
   async summarizeBookmark(_bookmark: Bookmark): Promise<AISummaryResult> {
     return {
-      shortSummary: 'AI summary is unavailable. Configure an AI provider to generate summaries.',
-      summary: 'AI summary is unavailable. Configure an AI provider in Settings to generate summaries for your bookmarks.',
+      shortSummary: '未配置 AI，暂时无法生成网页摘要。',
+      summary: '未配置 AI，暂时无法生成网页摘要。',
     };
   }
 
-  async generateTags(_bookmark: Bookmark): Promise<AITagResult> {
+  async generateTags(_bookmark: Bookmark, _options?: AITagOptions): Promise<AITagResult> {
     return { tags: [{ name: 'untagged', confidence: 1.0 }] };
   }
 
@@ -77,7 +83,7 @@ export class OpenAICompatibleProvider implements AIProvider {
         model: this.chatModel,
         messages,
         temperature: 0.3,
-        max_tokens: 1000,
+        max_tokens: 4000,
       }),
     });
 
@@ -94,7 +100,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       bookmark.title ? `Title: ${bookmark.title}` : '',
       `URL: ${bookmark.url}`,
       bookmark.description ? `Description: ${bookmark.description}` : '',
-      bookmark.contentText ? `Content: ${bookmark.contentText.slice(0, 2000)}` : '',
+      bookmark.contentText ? `Content: ${bookmark.contentText.slice(0, 4000)}` : '',
       bookmark.folderPath ? `Folder: ${bookmark.folderPath}` : '',
     ]
       .filter(Boolean)
@@ -103,24 +109,32 @@ export class OpenAICompatibleProvider implements AIProvider {
     const result = await this.chat([
       {
         role: 'system',
-        content: `You summarize bookmarked web pages. Return JSON with "shortSummary" (max 160 chars, one sentence) and "summary" (max 800 chars, detailed). Be concise. Do not invent information not present in the input. For tools/repos, explain what they do. For articles, capture the key idea.`,
+        content: `你是中文书签管家，负责给收藏网页生成便于搜索的一句话摘要。必须返回 JSON：{"shortSummary":"中文一句话，80字以内，说明这个网页是干什么的","summary":"同 shortSummary，可以稍微更完整但仍然只写一句话"}。不要输出 markdown，不要输出 <think>，不要编造输入里没有的信息。工具/项目说明用途，文章提炼核心观点。`,
       },
       { role: 'user', content },
     ]);
 
     try {
-      const cleaned = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      return JSON.parse(cleaned);
+      const parsed = JSON.parse(extractJSONFromAIText(result)) as AISummaryResult;
+      const shortSummary = cleanBookmarkSummary(parsed.shortSummary, parsed.summary, 120) ?? '';
+      const summary = cleanBookmarkSummary(parsed.summary, shortSummary, 180) ?? shortSummary;
+      return { shortSummary, summary };
     } catch {
-      return { shortSummary: result.slice(0, 160), summary: result.slice(0, 800) };
+      const summary = cleanBookmarkSummary(result, bookmark.description, 180) ?? '';
+      return { shortSummary: summary, summary };
     }
   }
 
-  async generateTags(bookmark: Bookmark): Promise<AITagResult> {
+  async generateTags(bookmark: Bookmark, options: AITagOptions = {}): Promise<AITagResult> {
+    const existingTags = Array.from(new Set((options.existingTags ?? []).map((tag) => tag.trim()).filter(Boolean))).slice(0, 120);
+    const maxTags = Number.isFinite(options.maxTags) ? Math.min(Math.max(Math.round(options.maxTags!), 1), 3) : 3;
     const content = [
+      existingTags.length > 0 ? `EXISTING_TAGS: ${JSON.stringify(existingTags)}` : '',
+      `MAX_TAGS: ${maxTags}`,
       bookmark.title ? `Title: ${bookmark.title}` : '',
       `URL: ${bookmark.url}`,
       bookmark.summary ?? bookmark.description ?? '',
+      bookmark.contentText ? `Content: ${bookmark.contentText.slice(0, 3000)}` : '',
       bookmark.folderPath ? `Folder: ${bookmark.folderPath}` : '',
     ]
       .filter(Boolean)
@@ -129,14 +143,13 @@ export class OpenAICompatibleProvider implements AIProvider {
     const result = await this.chat([
       {
         role: 'system',
-        content: `Generate 3-8 tags for a bookmarked web page. Return JSON: {"tags": [{"name": "tag-name", "confidence": 0.9}]}. Rules: lowercase kebab-case, no generic words like "article"/"website"/"homepage", keep proper nouns (mcp, sqlite, react), normalize synonyms.`,
+        content: `Generate compact tags for a bookmarked web page. Return JSON: {"tags": [{"name": "tag-name", "confidence": 0.9}]}. Rules: use 1-${maxTags} tags, fewer is better; first reuse exact names from EXISTING_TAGS when one fits; create a new tag only when no existing tag covers the concept; normalize and merge synonyms instead of creating near-duplicate tags; lowercase kebab-case for new tags; no generic words like "article"/"website"/"homepage"; keep proper nouns (mcp, sqlite, react); avoid tags that cannot be grounded in the input.`,
       },
       { role: 'user', content },
     ]);
 
     try {
-      const cleaned = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      return JSON.parse(cleaned);
+      return JSON.parse(extractJSONFromAIText(result));
     } catch {
       return { tags: [] };
     }
@@ -161,8 +174,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     ]);
 
     try {
-      const cleaned = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      return JSON.parse(cleaned);
+      return JSON.parse(extractJSONFromAIText(result));
     } catch {
       return { title: '', confidence: 0 };
     }
@@ -197,7 +209,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       },
       { role: 'user', content: query },
     ]);
-    return result.trim();
+    return extractJSONFromAIText(result).replace(/\s+/g, ' ').trim();
   }
 }
 
@@ -248,24 +260,32 @@ export class OllamaCompatibleProvider implements AIProvider {
     const result = await this.chat([
       {
         role: 'system',
-        content: 'Summarize this bookmarked page. Return JSON: {"shortSummary": "...", "summary": "..."}',
+        content: '你是中文书签管家。用中文给这个收藏网页生成一句话摘要。只返回 JSON：{"shortSummary":"80字以内中文一句话","summary":"同样只写一句话"}。不要 markdown，不要 <think>。',
       },
       { role: 'user', content },
     ]);
 
     try {
-      const cleaned = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      return JSON.parse(cleaned);
+      const parsed = JSON.parse(extractJSONFromAIText(result)) as AISummaryResult;
+      const shortSummary = cleanBookmarkSummary(parsed.shortSummary, parsed.summary, 120) ?? '';
+      const summary = cleanBookmarkSummary(parsed.summary, shortSummary, 180) ?? shortSummary;
+      return { shortSummary, summary };
     } catch {
-      return { shortSummary: result.slice(0, 160), summary: result.slice(0, 800) };
+      const summary = cleanBookmarkSummary(result, bookmark.description, 180) ?? '';
+      return { shortSummary: summary, summary };
     }
   }
 
-  async generateTags(bookmark: Bookmark): Promise<AITagResult> {
+  async generateTags(bookmark: Bookmark, options: AITagOptions = {}): Promise<AITagResult> {
+    const existingTags = Array.from(new Set((options.existingTags ?? []).map((tag) => tag.trim()).filter(Boolean))).slice(0, 120);
+    const maxTags = Number.isFinite(options.maxTags) ? Math.min(Math.max(Math.round(options.maxTags!), 1), 3) : 3;
     const content = [
+      existingTags.length > 0 ? `EXISTING_TAGS: ${JSON.stringify(existingTags)}` : '',
+      `MAX_TAGS: ${maxTags}`,
       bookmark.title ?? '',
       bookmark.url,
       bookmark.summary ?? bookmark.description ?? '',
+      bookmark.contentText?.slice(0, 3000) ?? '',
     ]
       .filter(Boolean)
       .join('\n');
@@ -273,14 +293,13 @@ export class OllamaCompatibleProvider implements AIProvider {
     const result = await this.chat([
       {
         role: 'system',
-        content: 'Generate 3-8 tags. Return JSON: {"tags": [{"name": "tag", "confidence": 0.9}]}. Lowercase kebab-case.',
+        content: `Generate compact tags from the bookmarked page content first, then title and URL. Return JSON: {"tags": [{"name": "tag", "confidence": 0.9}]}. Use 1-${maxTags} tags and prefer fewer. Reuse exact names from EXISTING_TAGS when possible. Create a new lowercase kebab-case tag only when no existing tag fits. Merge synonyms and avoid near-duplicate or ungrounded tags.`,
       },
       { role: 'user', content },
     ]);
 
     try {
-      const cleaned = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      return JSON.parse(cleaned);
+      return JSON.parse(extractJSONFromAIText(result));
     } catch {
       return { tags: [] };
     }

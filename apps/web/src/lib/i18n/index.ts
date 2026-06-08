@@ -29,6 +29,8 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY) as Locale | null;
     if (saved && translations[saved]) {
+      // Hydrate the persisted locale after the client localStorage is available.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLocaleState(saved);
     }
   }, []);

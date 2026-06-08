@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "SiftMarks",
-  description: "Local-first AI bookmark manager — turn messy browser bookmarks into a searchable memory library.",
+  description: "Local-first AI bookmark manager — save, organize, search, correct, review, and sync browser bookmarks.",
 };
 
 export default function RootLayout({

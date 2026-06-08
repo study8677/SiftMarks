@@ -2,9 +2,23 @@ import { NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
 import { getAIProvider } from '@/lib/ai';
 import { classifyBookmarks, MockProviderNotAllowedError } from '@siftmarks/ai';
-import { generateId, nowISO, type BookmarkTaxonomy, type CleanupSuggestion } from '@siftmarks/shared';
+import {
+  DEFAULT_SETTINGS,
+  generateId,
+  isLowValueFolderPath,
+  normalizeFolderPath,
+  nowISO,
+  type BookmarkTaxonomy,
+  type CleanupSuggestion,
+} from '@siftmarks/shared';
 
 const SETTING_KEY = 'bookmarkTaxonomy';
+
+function clampTopLevelFolderLimit(value: number): number {
+  return Number.isFinite(value)
+    ? Math.min(Math.max(Math.round(value), 3), 50)
+    : DEFAULT_SETTINGS.topLevelFolderLimit;
+}
 
 export async function POST() {
   const db = getDB();
@@ -28,6 +42,8 @@ export async function POST() {
   const provider = getAIProvider();
   const { items: bookmarks } = db.listBookmarks({ limit: 100000 });
   const active = bookmarks.filter((b) => b.status !== 'deleted');
+  const folderDepth = db.getSetting('folderDepth') === '2' ? 2 : 1;
+  const topLevelFolderLimit = clampTopLevelFolderLimit(Number(db.getSetting('topLevelFolderLimit')));
 
   if (active.length === 0) {
     return NextResponse.json({ created: 0, errors: 0, skipped: 0 });
@@ -39,6 +55,13 @@ export async function POST() {
     const now = nowISO();
     let created = 0;
     let skipped = 0;
+    const existingTopLevelFolders = new Set(
+      db
+        .listFolders()
+        .map((folder) => folder.path.split('/')[0])
+        .filter(Boolean)
+    );
+    const plannedTopLevelFolders = new Set(existingTopLevelFolders);
 
     db.transaction(() => {
       db.clearPendingSuggestionsByType('move');
@@ -49,7 +72,26 @@ export async function POST() {
           skipped++;
           continue;
         }
-        if (bookmark.folderPath === result.category) {
+        let targetFolder = normalizeFolderPath(result.category);
+        if (folderDepth === 1 && targetFolder.includes('/')) {
+          targetFolder = targetFolder.split('/')[0] ?? '';
+        }
+        if (folderDepth === 2) {
+          targetFolder = targetFolder.split('/').filter(Boolean).slice(0, 2).join('/');
+        }
+        if (!targetFolder || result.category === taxonomy.fallback || isLowValueFolderPath(targetFolder)) {
+          skipped++;
+          continue;
+        }
+        const topLevel = targetFolder.split('/')[0];
+        if (topLevel && !plannedTopLevelFolders.has(topLevel)) {
+          if (plannedTopLevelFolders.size >= topLevelFolderLimit) {
+            skipped++;
+            continue;
+          }
+          plannedTopLevelFolders.add(topLevel);
+        }
+        if (bookmark.folderPath === targetFolder) {
           skipped++;
           continue;
         }
@@ -61,8 +103,8 @@ export async function POST() {
           bookmarkId: bookmark.id,
           targetBookmarkId: null,
           beforeJson: JSON.stringify({ folderPath: bookmark.folderPath }),
-          afterJson: JSON.stringify({ folderPath: result.category }),
-          reason: `[AI] Categorized as "${result.category}" based on your taxonomy`,
+          afterJson: JSON.stringify({ folderPath: targetFolder }),
+          reason: `[AI] Categorized as "${targetFolder}" based on your taxonomy`,
           confidence: result.confidence,
           createdAt: now,
           resolvedAt: null,

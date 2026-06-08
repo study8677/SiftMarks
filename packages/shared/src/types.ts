@@ -35,6 +35,8 @@ export type TagSource = 'ai' | 'user' | 'import';
 
 export type BookmarkSource = 'import' | 'manual' | 'mcp' | 'extension';
 
+export const MAX_BOOKMARK_TAGS = 3;
+
 // Core bookmark type
 export interface Bookmark {
   id: string;
@@ -211,6 +213,8 @@ export interface AppSettings {
   localOnlyMode: boolean;
   fetchConcurrency: number;
   fetchTimeout: number;
+  folderDepth: 1 | 2;
+  topLevelFolderLimit: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -221,6 +225,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   localOnlyMode: true,
   fetchConcurrency: 5,
   fetchTimeout: 10000,
+  folderDepth: 1,
+  topLevelFolderLimit: 10,
 };
 
 // AI-generated, per-user bookmark taxonomy

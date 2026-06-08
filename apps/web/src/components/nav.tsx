@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useI18n, type Locale } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n';
 
 export function Nav() {
   const pathname = usePathname();
@@ -10,10 +10,11 @@ export function Nav() {
 
   const links = [
     { href: '/', label: t.nav.dashboard },
-    { href: '/import', label: t.nav.import },
+    { href: '/rescue', label: t.nav.rescue },
     { href: '/library', label: t.nav.library },
     { href: '/search', label: t.nav.search },
-    { href: '/rescue', label: t.nav.rescue },
+    { href: '/tags', label: t.nav.tags },
+    { href: '/import', label: t.nav.import },
     { href: '/taxonomy', label: t.nav.taxonomy },
     { href: '/settings', label: t.nav.settings },
     { href: '/mcp', label: t.nav.mcp },

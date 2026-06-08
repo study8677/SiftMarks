@@ -1,20 +1,21 @@
 import { SiftMarksDB } from '@siftmarks/db';
 import {
   generateId,
+  isLowValueFolderPath,
   isVagueTitle,
+  MAX_BOOKMARK_TAGS,
+  normalizeFolderPath,
   normalizeTagName,
   nowISO,
   type CleanupSuggestion,
   type CleanupType,
 } from '@siftmarks/shared';
-import { detectDuplicates } from './duplicates.js';
 import type { AIProvider } from '@siftmarks/ai';
 import { generateAIRescueSuggestions } from '@siftmarks/ai';
 
 const CHROME_SYNC_TYPES = new Set<CleanupType>([
   'rename',
   'move',
-  'merge_duplicate',
   'delete_broken',
 ]);
 
@@ -27,11 +28,7 @@ export function generateCleanupSuggestions(db: SiftMarksDB): CleanupSuggestion[]
 
   db.clearPendingSuggestions();
 
-  // 1. Duplicate detection
-  const dupSuggestions = detectDuplicates(db);
-  suggestions.push(...dupSuggestions);
-
-  // 2. Vague title detection
+  // 1. Vague title detection
   const { items: allBookmarks } = db.listBookmarks({ limit: 100000 });
   for (const bookmark of allBookmarks) {
     if (bookmark.status === 'deleted') continue;
@@ -59,7 +56,7 @@ export function generateCleanupSuggestions(db: SiftMarksDB): CleanupSuggestion[]
     }
   }
 
-  // 3. Broken link suggestions
+  // 2. Broken link suggestions
   for (const bookmark of allBookmarks.filter((b) => b.status === 'broken')) {
     suggestions.push({
       id: generateId(),
@@ -75,6 +72,9 @@ export function generateCleanupSuggestions(db: SiftMarksDB): CleanupSuggestion[]
       resolvedAt: null,
     });
   }
+
+  // Folder classification is AI-led. Rule-based rescue only handles
+  // deterministic issues such as vague titles and broken links.
 
   db.transaction(() => {
     for (const suggestion of suggestions) {
@@ -118,18 +118,43 @@ export async function generateAICleanupSuggestions(
   // Get all bookmarks for AI analysis
   const { items: allBookmarks } = db.listBookmarks({ limit: 100000 });
   const activeBookmarks = allBookmarks.filter((b) => b.status !== 'deleted');
+  const folders = db
+    .listFolders()
+    .map((folder) => folder.path)
+    .filter((path) => !isLowValueFolderPath(path));
+  const folderDepth = db.getSetting('folderDepth') === '2' ? 2 : 1;
+  const rawTopLevelFolderLimit = Number(db.getSetting('topLevelFolderLimit'));
+  const topLevelFolderLimit = Number.isFinite(rawTopLevelFolderLimit)
+    ? Math.min(Math.max(Math.round(rawTopLevelFolderLimit), 3), 50)
+    : 10;
+  const existingTopLevelFolders = new Set(folders.map((folder) => folder.split('/')[0]).filter(Boolean));
+  const plannedTopLevelFolders = new Set(existingTopLevelFolders);
 
   // Run AI analysis
   const aiSuggestions = await generateAIRescueSuggestions(
     provider,
     activeBookmarks,
-    onProgress
+    onProgress,
+    { folders, folderDepth, topLevelFolderLimit }
   );
 
   // Convert AI suggestions to CleanupSuggestion and save
   const newSuggestions: CleanupSuggestion[] = [];
 
   for (const ai of aiSuggestions) {
+    if (ai.type === 'move') {
+      let folderPath = normalizeFolderPath(String(ai.after?.folderPath ?? ''));
+      if (folderDepth === 1 && folderPath.includes('/')) continue;
+      if (folderDepth === 2 && folderPath.split('/').filter(Boolean).length > 2) continue;
+      if (!folderPath || isLowValueFolderPath(folderPath)) continue;
+      const topLevel = folderPath.split('/')[0];
+      if (topLevel && !plannedTopLevelFolders.has(topLevel)) {
+        if (plannedTopLevelFolders.size >= topLevelFolderLimit) continue;
+        plannedTopLevelFolders.add(topLevel);
+      }
+      ai.after = { ...ai.after, folderPath };
+    }
+
     const suggestion: CleanupSuggestion = {
       id: generateId(),
       type: ai.type,
@@ -189,9 +214,12 @@ export function applySuggestion(db: SiftMarksDB, suggestionId: string): boolean 
     case 'tag':
       if (suggestion.bookmarkId && after.tags) {
         const tags: string[] = after.tags;
+        const seenTagKeys = new Set<string>();
         for (const tagName of tags) {
+          if (seenTagKeys.size >= MAX_BOOKMARK_TAGS) break;
           const normalizedName = normalizeTagName(tagName);
-          if (!normalizedName) continue;
+          if (!normalizedName || seenTagKeys.has(normalizedName)) continue;
+          seenTagKeys.add(normalizedName);
 
           let tag = db.getTagByNormalizedName(normalizedName);
           if (!tag) {
@@ -216,7 +244,10 @@ export function applySuggestion(db: SiftMarksDB, suggestionId: string): boolean 
 
     case 'move':
       if (suggestion.bookmarkId && after.folderPath) {
-        db.updateBookmark(suggestion.bookmarkId, { folderPath: after.folderPath });
+        const folderPath = normalizeFolderPath(after.folderPath);
+        if (folderPath && !isLowValueFolderPath(folderPath)) {
+          db.updateBookmark(suggestion.bookmarkId, { folderPath });
+        }
       }
       break;
 

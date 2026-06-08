@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useI18n } from '@/lib/i18n';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 
 interface Suggestion {
   id: string;
@@ -17,136 +17,388 @@ interface Suggestion {
 
 interface ChromeSyncNotice {
   count: number;
+  ops: ChromeSyncOp[];
+}
+
+interface ChromeSyncOp {
+  id: string;
+  action: 'update' | 'remove' | 'move';
+  chromeId: string;
+  bookmarkTitle?: string | null;
+  bookmarkUrl?: string;
+  title?: string;
+  url?: string;
+  folderPath?: string;
+}
+
+interface RescueRunResult {
+  suggestionsCount: number;
+  duplicates: number;
+  broken: number;
+  renames: number;
+  tags: number;
+  folders: number;
+  aiPowered: boolean;
+  analysis?: {
+    processed: number;
+    fetched: number;
+    summaries: number;
+    tags: number;
+    embeddings: number;
+    linkFailures: number;
+    errors: number;
+    firstError: string | null;
+  };
+  folderPolicy?: {
+    folderDepth: 1 | 2;
+    topLevelFolderLimit: number;
+    topLevelFolderCount: number;
+    projectedTopLevelFolderCount: number;
+    limitReached: boolean;
+    willReachLimit: boolean;
+    message: string | null;
+  };
+}
+
+const typeLabels: Record<string, string> = {
+  rename: '标题修复',
+  tag: '标签修改',
+  move: '分类建议',
+  delete_broken: '坏链处理',
+  merge_folder: '文件夹合并',
+  normalize_tag: '标签规范化',
+};
+
+function notifySuggestionsChanged() {
+  window.dispatchEvent(new Event('siftmarks:suggestions-changed'));
 }
 
 export default function RescuePage() {
-  const { t } = useI18n();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
   const [filterType, setFilterType] = useState<string | null>(null);
-
-  const typeLabels = t.rescue.types as Record<string, string>;
+  const [scanResult, setScanResult] = useState<RescueRunResult | null>(null);
+  const [syncingChrome, setSyncingChrome] = useState(false);
+  const [syncResult, setSyncResult] = useState<ChromeSyncNotice | null>(null);
+  const [folderDepth, setFolderDepth] = useState<1 | 2>(1);
+  const [topLevelFolderLimit, setTopLevelFolderLimit] = useState(10);
+  const [savingFolderPolicy, setSavingFolderPolicy] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
 
   const fetchSuggestions = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({ status: 'pending', limit: '100' });
     if (filterType) params.set('type', filterType);
 
-    const res = await fetch(`/api/suggestions?${params}`);
-    const data = await res.json();
-    setSuggestions(data.items);
-    setTotal(data.total);
-    setLoading(false);
-    setHasScanned(true);
+    try {
+      const res = await fetch(`/api/suggestions?${params}`);
+      const data = await res.json();
+      setSuggestions(data.items ?? []);
+      setTotal(data.total ?? 0);
+      setHasScanned(true);
+      setError('');
+    } catch {
+      setError('建议列表加载失败。');
+    } finally {
+      setLoading(false);
+    }
   }, [filterType]);
 
-  const runRescue = async () => {
-    setScanning(true);
-    await fetch('/api/rescue', { method: 'POST' });
-    setScanning(false);
-    fetchSuggestions();
-  };
-
-  const handleAccept = async (id: string) => {
-    await fetch(`/api/suggestions/${id}/accept`, { method: 'POST' });
-    setSuggestions((prev) => prev.filter((s) => s.id !== id));
-    setTotal((n) => n - 1);
-  };
-
-  const handleDismiss = async (id: string) => {
-    await fetch(`/api/suggestions/${id}/dismiss`, { method: 'POST' });
-    setSuggestions((prev) => prev.filter((s) => s.id !== id));
-    setTotal((n) => n - 1);
-  };
-
-  const [acceptingAll, setAcceptingAll] = useState(false);
-  const [syncingChrome, setSyncingChrome] = useState(false);
-  const [syncResult, setSyncResult] = useState<ChromeSyncNotice | null>(null);
-
   const fetchChromeSyncNotice = useCallback(async (showEmpty = false) => {
-    const res = await fetch('/api/extension/sync-back');
-    const data = await res.json();
-    const count = data.count ?? 0;
-    setSyncResult(count > 0 || showEmpty ? { count } : null);
+    try {
+      const res = await fetch('/api/extension/sync-back');
+      const data = await res.json();
+      const count = data.count ?? 0;
+      setSyncResult(count > 0 || showEmpty ? { count, ops: Array.isArray(data.ops) ? data.ops : [] } : null);
+    } catch {
+      setError('同步影响预览失败。');
+    }
   }, []);
 
-  const handleAcceptAllSuggestions = async () => {
-    setAcceptingAll(true);
-    await fetch('/api/suggestions/accept-all', { method: 'POST' });
-    setAcceptingAll(false);
-    fetchSuggestions();
-  };
-
-  const handleDismissAll = async () => {
-    for (const s of suggestions) {
-      await fetch(`/api/suggestions/${s.id}/dismiss`, { method: 'POST' });
+  const fetchFolderPolicy = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings');
+      const data = await res.json();
+      setFolderDepth(data.folderDepth === 2 ? 2 : 1);
+      const value = Number(data.topLevelFolderLimit);
+      setTopLevelFolderLimit(Number.isFinite(value) ? Math.min(Math.max(Math.round(value), 3), 50) : 10);
+    } catch {
+      setError('文件夹策略加载失败。');
     }
-    fetchSuggestions();
-  };
+  }, []);
 
-  const handleAcceptAndSync = async () => {
-    setAcceptingAll(true);
-    await fetch('/api/suggestions/accept-all', { method: 'POST' });
-    setAcceptingAll(false);
-    await fetchChromeSyncNotice(true);
+  useEffect(() => {
+    // Existing app pages hydrate local API state from client effects.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSuggestions();
-  };
+    fetchChromeSyncNotice();
+    fetchFolderPolicy();
+  }, [fetchSuggestions, fetchChromeSyncNotice, fetchFolderPolicy]);
 
-  const handleSyncToChrome = async () => {
+  const typeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const suggestion of suggestions) {
+      counts.set(suggestion.type, (counts.get(suggestion.type) ?? 0) + 1);
+    }
+    return counts;
+  }, [suggestions]);
+
+  async function runRescue() {
+    setScanning(true);
+    setNotice('');
+    setError('');
+
+    try {
+      const res = await fetch('/api/rescue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deep: true, analysisLimit: 20 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? '整理扫描失败。');
+      setScanResult(data);
+      const suggestionsCount = data.suggestionsCount ?? 0;
+      setNotice(suggestionsCount > 0
+        ? `生成 ${suggestionsCount} 条待审查建议。`
+        : '整理检查完成，当前没有需要处理的建议。'
+      );
+      await fetchSuggestions();
+      notifySuggestionsChanged();
+      await fetchChromeSyncNotice();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '整理扫描失败。');
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function acceptSuggestion(id: string) {
+    setNotice('');
+    setError('');
+
+    try {
+      const res = await fetch(`/api/suggestions/${id}/accept`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? '接受建议失败。');
+
+      setSuggestions((prev) => prev.filter((suggestion) => suggestion.id !== id));
+      setTotal((count) => Math.max(0, count - 1));
+      setNotice('建议已写入本地。涉及 Chrome 的改动会进入同步预览。');
+      notifySuggestionsChanged();
+      await fetchChromeSyncNotice();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '接受建议失败。');
+    }
+  }
+
+  async function dismissSuggestion(id: string) {
+    setNotice('');
+    setError('');
+
+    try {
+      const res = await fetch(`/api/suggestions/${id}/dismiss`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? '忽略建议失败。');
+
+      setSuggestions((prev) => prev.filter((suggestion) => suggestion.id !== id));
+      setTotal((count) => Math.max(0, count - 1));
+      notifySuggestionsChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '忽略建议失败。');
+    }
+  }
+
+  async function dismissVisibleSuggestions() {
+    const confirmed = window.confirm('忽略当前列表里的所有建议？');
+    if (!confirmed) return;
+
+    for (const suggestion of suggestions) {
+      await fetch(`/api/suggestions/${suggestion.id}/dismiss`, { method: 'POST' });
+    }
+    await fetchSuggestions();
+    notifySuggestionsChanged();
+    setNotice('当前列表建议已忽略。');
+  }
+
+  async function previewChromeSync() {
     setSyncingChrome(true);
     await fetchChromeSyncNotice(true);
     setSyncingChrome(false);
-  };
+  }
 
-  useEffect(() => {
-    fetchSuggestions();
-    fetchChromeSyncNotice();
-  }, [fetchSuggestions, fetchChromeSyncNotice]);
+  async function saveFolderPolicy() {
+    setSavingFolderPolicy(true);
+    setNotice('');
+    setError('');
 
-  const typeCounts = new Map<string, number>();
-  for (const s of suggestions) {
-    typeCounts.set(s.type, (typeCounts.get(s.type) ?? 0) + 1);
+    try {
+      const normalizedLimit = Number.isFinite(topLevelFolderLimit)
+        ? Math.min(Math.max(Math.round(topLevelFolderLimit), 3), 50)
+        : 10;
+      const res = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          folderDepth,
+          topLevelFolderLimit: normalizedLimit,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? '保存文件夹策略失败。');
+      setTopLevelFolderLimit(normalizedLimit);
+      setNotice('文件夹策略已保存，下一次生成整理建议会按这个规则执行。');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存文件夹策略失败。');
+    } finally {
+      setSavingFolderPolicy(false);
+    }
   }
 
   return (
-    <div>
-      <div className="flex items-start justify-between mb-6">
+    <div className="mx-auto max-w-6xl">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">{t.rescue.title}</h1>
-          <p className="text-muted text-sm mt-1">{t.rescue.desc}</p>
+          <h1 className="text-2xl font-bold text-[#101828]">整理建议</h1>
+          <p className="mt-1 text-sm text-muted">书签管家会定期发现坏链、空标题、缺摘要和分类问题；AI 只给建议，不会绕过你直接改 Chrome。</p>
         </div>
         <button
           onClick={runRescue}
           disabled={scanning}
-          className="px-4 py-2 bg-accent text-white rounded-md font-medium text-sm hover:opacity-90 transition disabled:opacity-50"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
         >
-          {scanning ? t.rescue.scanning : t.rescue.runScan}
+          {scanning ? '扫描中...' : '生成整理建议'}
         </button>
       </div>
 
-      {hasScanned && total > 0 && (
-        <div className="mb-6 p-4 rounded-lg bg-warning-light border border-warning/20">
-          <p className="font-medium">{t.rescue.cleanupPR(total)}</p>
-          <p className="text-sm text-muted mt-1">{t.rescue.cleanupPRDesc}</p>
+      <div className="mb-5 grid gap-3 md:grid-cols-4">
+        <FlowStep title="1. 保存" text="平时用扩展或导入把书签进入本地库。" />
+        <FlowStep title="2. 找回" text="用标题、标签、摘要、正文和智能搜索找回。" />
+        <FlowStep title="3. 整理" text="定期处理坏链、空标题和分类问题。" />
+        <FlowStep title="4. 同步" text="同步前预览影响，再由插件写回 Chrome。" />
+      </div>
+
+      <section className="mb-4 rounded-lg border border-[#dfe6f2] bg-white p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-[#101828]">AI 文件夹策略</h2>
+            <p className="mt-1 text-xs leading-5 text-[#667085]">
+              AI 先参考已有文件夹；不合适才建议新文件夹。默认只建议一级文件夹，开启二级后才允许 “一级/二级”。
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <div className="mb-1.5 text-xs font-semibold text-[#667085]">层级</div>
+              <div className="inline-flex rounded-lg border border-[#dfe6f2] bg-white p-1">
+                {[1, 2].map((depth) => (
+                  <button
+                    key={depth}
+                    type="button"
+                    onClick={() => setFolderDepth(depth as 1 | 2)}
+                    className={`h-8 rounded-md px-3 text-xs font-semibold ${
+                      folderDepth === depth ? 'bg-[#1463ff] text-white' : 'text-[#667085] hover:text-[#101828]'
+                    }`}
+                  >
+                    {depth === 1 ? '一级' : '二级'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="block">
+              <div className="mb-1.5 text-xs font-semibold text-[#667085]">一级文件夹上限</div>
+              <input
+                type="number"
+                min={3}
+                max={50}
+                value={topLevelFolderLimit}
+                onChange={(event) => setTopLevelFolderLimit(Number(event.target.value))}
+                className="h-10 w-28 rounded-lg border border-[#dfe6f2] bg-white px-3 text-sm outline-none focus:border-[#1463ff]"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={saveFolderPolicy}
+              disabled={savingFolderPolicy}
+              className="h-10 rounded-lg border border-[#b9d3ff] bg-white px-4 text-sm font-semibold text-[#1463ff] disabled:opacity-50"
+            >
+              {savingFolderPolicy ? '保存中...' : '保存策略'}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {(notice || error) && (
+        <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+          error ? 'border-[#f5c2c7] bg-[#fff3f3] text-[#c0172d]' : 'border-[#b7ebc6] bg-[#f0fff4] text-[#157347]'
+        }`}>
+          {error || notice}
         </div>
       )}
 
+      {scanResult?.analysis && (
+        <section className="mb-4 rounded-lg border border-[#dfe6f2] bg-white p-4 text-sm text-[#344054]">
+          <div className="font-semibold text-[#101828]">本次整理扫描</div>
+          <div className="mt-2 grid gap-2 md:grid-cols-6">
+            <Metric label="分析书签" value={scanResult.analysis.processed} />
+            <Metric label="抓到正文" value={scanResult.analysis.fetched} />
+            <Metric label="生成摘要" value={scanResult.analysis.summaries} />
+            <Metric label="辅助标签" value={scanResult.analysis.tags} />
+            <Metric label="语义索引" value={scanResult.analysis.embeddings} />
+            <Metric label="坏链/超时" value={scanResult.analysis.linkFailures} />
+          </div>
+          {scanResult.analysis.firstError && (
+            <div className="mt-2 text-xs text-[#c0172d]">首个错误：{scanResult.analysis.firstError}</div>
+          )}
+        </section>
+      )}
+
+      {scanResult?.folderPolicy?.willReachLimit && (
+        <section className="mb-4 rounded-lg border border-[#f2d06b] bg-[#fff9e6] p-4 text-sm text-[#7a4b00]">
+          <div className="font-semibold text-[#5f3b00]">一级文件夹已达到上限</div>
+          <p className="mt-1 leading-6">
+            {scanResult.folderPolicy.message}
+            {' '}如果你希望 AI 继续拆出新的一级文件夹，可以调整上限；如果当前分类已经太散，可以先重新生成一套分类方案。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href="/taxonomy"
+              className="rounded-lg border border-[#d39b21] bg-white px-3 py-1.5 text-xs font-semibold text-[#7a4b00] transition hover:bg-[#fff3c2]"
+            >
+              重新整理分类方案
+            </Link>
+            <Link
+              href="/settings"
+              className="rounded-lg bg-[#d39b21] px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+            >
+              调整一级文件夹上限
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {hasScanned && total > 0 && (
+        <section className="mb-4 rounded-lg border border-warning/20 bg-warning-light p-4">
+          <p className="font-medium">待审查建议：{total} 条</p>
+          <p className="mt-1 text-sm text-muted">接受建议只先写入本地；涉及 Chrome 标题、移动、删除的改动会进入同步预览。</p>
+        </section>
+      )}
+
       {total > 0 && (
-        <div className="flex gap-1 mb-4 flex-wrap">
+        <div className="mb-4 flex flex-wrap gap-2">
           <button
             onClick={() => setFilterType(null)}
-            className={`px-3 py-1 rounded-md text-sm ${!filterType ? 'bg-accent text-white' : 'text-muted border border-border'}`}
+            className={`rounded-md px-3 py-1 text-sm ${!filterType ? 'bg-accent text-white' : 'border border-border text-muted'}`}
           >
-            {t.library.filters.all} ({total})
+            全部 ({total})
           </button>
           {Array.from(typeCounts.entries()).map(([type, count]) => (
             <button
               key={type}
               onClick={() => setFilterType(type)}
-              className={`px-3 py-1 rounded-md text-sm ${filterType === type ? 'bg-accent text-white' : 'text-muted border border-border'}`}
+              className={`rounded-md px-3 py-1 text-sm ${filterType === type ? 'bg-accent text-white' : 'border border-border text-muted'}`}
             >
               {typeLabels[type] ?? type} ({count})
             </button>
@@ -154,84 +406,70 @@ export default function RescuePage() {
         </div>
       )}
 
-      {/* Sync result banner */}
-      {syncResult && (
-        <div className="mb-4 p-4 rounded-lg bg-accent-light border border-accent/20">
-          <p className="font-semibold">
-            {syncResult.count > 0
-              ? t.rescue.syncReady(syncResult.count)
-              : t.rescue.syncNoOps}
-          </p>
-          {syncResult.count > 0 && (
-            <p className="text-sm text-muted mt-1">{t.rescue.syncUseExtension}</p>
-          )}
-        </div>
-      )}
-
-      {total === 0 && syncResult?.count ? (
-        <div className="mb-4">
-          <button
-            onClick={handleSyncToChrome}
-            disabled={syncingChrome}
-            className="px-4 py-3 border-2 border-accent text-accent rounded-lg font-medium text-sm hover:bg-accent-light transition disabled:opacity-50"
-          >
-            {syncingChrome ? t.rescue.syncingChrome : t.rescue.syncToChrome}
-          </button>
-        </div>
-      ) : null}
-
-      {total > 0 && (
-        <div className="space-y-3 mb-4">
-          {/* Primary: one-click accept + sync to Chrome */}
+      <div className="mb-4 rounded-lg border border-[#dfe6f2] bg-white p-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm text-[#475467]">
+            接受后的改名、移动和删除会先留在本地同步计划里，预览确认后再由插件写回 Chrome。
+          </div>
+          <div className="flex flex-wrap gap-2">
             <button
-              onClick={handleAcceptAndSync}
-              disabled={acceptingAll || syncingChrome}
-              className="w-full px-4 py-4 bg-accent text-white rounded-lg font-bold text-base hover:opacity-90 transition disabled:opacity-50"
-            >
-            {acceptingAll ? t.rescue.accepting : syncingChrome ? t.rescue.syncingChrome : t.rescue.acceptAndSync(total)}
-          </button>
-
-          <div className="flex gap-3">
-            <button
-              onClick={handleAcceptAllSuggestions}
-              disabled={acceptingAll}
-              className="flex-1 px-4 py-3 bg-success text-white rounded-lg font-medium text-sm hover:opacity-90 transition disabled:opacity-50"
-            >
-              {acceptingAll ? t.rescue.accepting : t.rescue.acceptAll(total)}
-            </button>
-            <button
-              onClick={handleSyncToChrome}
+              onClick={previewChromeSync}
               disabled={syncingChrome}
-              className="flex-1 px-4 py-3 border-2 border-accent text-accent rounded-lg font-medium text-sm hover:bg-accent-light transition disabled:opacity-50"
+              className="rounded-lg border border-accent px-4 py-2 text-sm font-medium text-accent transition hover:bg-accent-light disabled:opacity-50"
             >
-              {syncingChrome ? t.rescue.syncingChrome : t.rescue.syncToChrome}
+              {syncingChrome ? '读取中...' : '预览待写回 Chrome'}
             </button>
-            <button
-              onClick={handleDismissAll}
-              className="px-4 py-3 border border-border rounded-lg text-sm text-muted hover:text-foreground hover:border-danger transition"
-            >
-              {t.rescue.dismissAll}
-            </button>
+            {suggestions.length > 0 && (
+              <button
+                onClick={dismissVisibleSuggestions}
+                className="rounded-lg border border-border px-4 py-2 text-sm text-muted transition hover:border-danger hover:text-foreground"
+              >
+                忽略当前列表
+              </button>
+            )}
           </div>
         </div>
+      </div>
+
+      {syncResult && (
+        <section className="mb-4 rounded-lg border border-accent/20 bg-accent-light p-4">
+          <p className="font-semibold">
+            {syncResult.count > 0 ? `有 ${syncResult.count} 项 Chrome 改动等待插件写回。` : '当前没有需要写回 Chrome 的改动。'}
+          </p>
+          <p className="mt-1 text-sm text-muted">这里只预览已接受建议的写回影响；预览不会修改 Chrome。</p>
+          {syncResult.count > 0 && (
+            <>
+              <p className="mt-1 text-sm text-muted">真正写入 Chrome 仍需在 SiftMarks 插件弹窗点击“安全写回 Chrome”。</p>
+              <div className="mt-3 space-y-2">
+                {syncResult.ops.map((op) => (
+                  <div key={op.id} className="rounded-lg border border-[#b9d3ff] bg-white/85 px-3 py-2 text-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-[#eef4ff] px-2 py-0.5 text-xs font-semibold text-[#1463ff]">{formatChromeOpAction(op)}</span>
+                      <span className="min-w-0 truncate font-medium text-[#101828]">{op.bookmarkTitle || op.bookmarkUrl || op.chromeId}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-[#667085]">{formatChromeOpDetail(op)}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
       )}
 
       {loading ? (
-        <div className="text-muted animate-pulse">{t.common.loading}</div>
+        <div className="animate-pulse text-muted">加载中...</div>
       ) : suggestions.length === 0 ? (
-        <div className="text-center py-12 text-muted">
-          {hasScanned ? t.rescue.noPending : t.rescue.clickToScan}
+        <div className="rounded-lg border border-dashed border-border bg-card py-12 text-center text-muted">
+          {hasScanned ? '当前没有待审查建议。' : '点击“生成整理建议”开始检查书签库。'}
         </div>
       ) : (
         <div className="space-y-3">
-          {suggestions.map((s) => (
+          {suggestions.map((suggestion) => (
             <SuggestionCard
-              key={s.id}
-              suggestion={s}
-              typeLabels={typeLabels}
-              t={t}
-              onAccept={() => handleAccept(s.id)}
-              onDismiss={() => handleDismiss(s.id)}
+              key={suggestion.id}
+              suggestion={suggestion}
+              onAccept={() => acceptSuggestion(suggestion.id)}
+              onDismiss={() => dismissSuggestion(suggestion.id)}
             />
           ))}
         </div>
@@ -242,65 +480,129 @@ export default function RescuePage() {
 
 function SuggestionCard({
   suggestion,
-  typeLabels,
-  t,
   onAccept,
   onDismiss,
 }: {
   suggestion: Suggestion;
-  typeLabels: Record<string, string>;
-  t: any;
   onAccept: () => void;
   onDismiss: () => void;
 }) {
-  const before = JSON.parse(suggestion.beforeJson);
-  const after = JSON.parse(suggestion.afterJson);
+  const before = parseJSON(suggestion.beforeJson);
+  const after = parseJSON(suggestion.afterJson);
 
   return (
-    <div className="p-4 rounded-lg border border-border bg-card">
+    <article className="rounded-lg border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-              suggestion.type === 'merge_duplicate' ? 'bg-warning-light text-warning' :
-              suggestion.type === 'delete_broken' ? 'bg-danger-light text-danger' :
-              'bg-accent-light text-accent'
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className={`rounded px-2 py-0.5 text-xs font-medium ${
+              suggestion.type === 'delete_broken'
+                  ? 'bg-danger-light text-danger'
+                  : 'bg-accent-light text-accent'
             }`}>
               {typeLabels[suggestion.type] ?? suggestion.type}
             </span>
             {suggestion.confidence !== null && (
-              <span className="text-xs text-muted">{t.rescue.confidence(Math.round(suggestion.confidence * 100))}</span>
+              <span className="text-xs text-muted">置信度 {Math.round(suggestion.confidence * 100)}%</span>
             )}
           </div>
 
           {suggestion.bookmark && (
-            <div className="text-sm mb-2">
-              <span className="font-medium">{suggestion.bookmark.title ?? t.detail.untitled}</span>
-              <span className="text-muted text-xs ml-2">{suggestion.bookmark.url}</span>
+            <div className="mb-2 min-w-0 text-sm">
+              <span className="font-medium">{suggestion.bookmark.title ?? '无标题'}</span>
+              <span className="ml-2 text-xs text-muted">{suggestion.bookmark.url}</span>
             </div>
           )}
 
-          <div className="font-mono text-xs space-y-0.5">
-            {before.title !== undefined && <div className="text-danger">{t.rescue.diff.removeTitle(before.title)}</div>}
-            {after.title !== undefined && <div className="text-success">{t.rescue.diff.addTitle(after.title)}</div>}
-            {before.url && suggestion.type === 'merge_duplicate' && <div className="text-danger">- {before.url}</div>}
-            {after.targetUrl && <div className="text-success">{t.rescue.diff.keepUrl(after.targetUrl)}</div>}
-            {after.tags && <div className="text-success">{t.rescue.diff.addTags(JSON.stringify(after.tags))}</div>}
-            {after.action === 'delete' && <div className="text-danger">{t.rescue.diff.removeBroken}</div>}
+          <div className="space-y-1 rounded-lg bg-[#fbfdff] p-3 font-mono text-xs">
+            {renderDiff(before, after, suggestion.type).map((line) => (
+              <div key={line.text} className={line.tone === 'remove' ? 'text-danger' : line.tone === 'add' ? 'text-success' : 'text-[#475467]'}>
+                {line.text}
+              </div>
+            ))}
           </div>
 
-          {suggestion.reason && <div className="text-xs text-muted mt-2">{suggestion.reason}</div>}
+          {suggestion.reason && <div className="mt-2 text-xs text-muted">{suggestion.reason}</div>}
         </div>
 
-        <div className="flex gap-1 shrink-0">
-          <button onClick={onAccept} className="px-3 py-1 bg-success text-white rounded text-xs hover:opacity-90 transition">
-            {t.rescue.accept}
+        <div className="flex shrink-0 flex-wrap gap-1">
+          {suggestion.bookmarkId && (
+            <Link href={`/bookmarks/${suggestion.bookmarkId}`} className="rounded border border-border px-3 py-1 text-xs transition hover:bg-card">
+              编辑
+            </Link>
+          )}
+          <button onClick={onAccept} className="rounded bg-success px-3 py-1 text-xs text-white transition hover:opacity-90">
+            接受
           </button>
-          <button onClick={onDismiss} className="px-3 py-1 border border-border rounded text-xs hover:bg-card transition">
-            {t.rescue.dismiss}
+          <button onClick={onDismiss} className="rounded border border-border px-3 py-1 text-xs transition hover:bg-card">
+            忽略
           </button>
         </div>
       </div>
+    </article>
+  );
+}
+
+function FlowStep({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded-lg border border-[#dfe6f2] bg-white p-3">
+      <div className="text-sm font-bold text-[#101828]">{title}</div>
+      <div className="mt-1 text-xs leading-5 text-[#667085]">{text}</div>
     </div>
   );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md bg-[#fbfdff] px-3 py-2">
+      <div className="text-base font-bold text-[#101828]">{value}</div>
+      <div className="mt-0.5 text-xs text-[#667085]">{label}</div>
+    </div>
+  );
+}
+
+function parseJSON(value: string): Record<string, unknown> {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function renderDiff(before: Record<string, unknown>, after: Record<string, unknown>, type: string) {
+  const lines: Array<{ text: string; tone: 'add' | 'remove' | 'neutral' }> = [];
+
+  if (before.title !== undefined) lines.push({ text: `- title: ${formatDiffValue(before.title, '(empty)')}`, tone: 'remove' });
+  if (after.title !== undefined) lines.push({ text: `+ title: ${formatDiffValue(after.title)}`, tone: 'add' });
+  if (before.folderPath !== undefined) lines.push({ text: `- folder: ${formatDiffValue(before.folderPath, '(none)')}`, tone: 'remove' });
+  if (after.folderPath !== undefined) lines.push({ text: `+ folder: ${formatDiffValue(after.folderPath)}`, tone: 'add' });
+  if (before.url !== undefined) lines.push({ text: `- url: ${formatDiffValue(before.url)}`, tone: 'remove' });
+  if (after.targetUrl !== undefined) lines.push({ text: `keep url: ${formatDiffValue(after.targetUrl)}`, tone: 'neutral' });
+  if (Array.isArray(after.tags)) lines.push({ text: `+ tags: ${after.tags.map((tag) => formatDiffValue(tag)).join(', ')}`, tone: 'add' });
+  if (after.action === 'delete') lines.push({ text: '+ action: move to local deleted state', tone: 'remove' });
+  if (after.action === 'merge_into') lines.push({ text: `+ action: merge into ${formatDiffValue(after.targetTitle ?? after.targetId, 'target bookmark')}`, tone: 'add' });
+
+  if (lines.length === 0) {
+    lines.push({ text: `${type}: ${JSON.stringify(after)}`, tone: 'neutral' });
+  }
+
+  return lines;
+}
+
+function formatDiffValue(value: unknown, fallback = ''): string {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
+}
+
+function formatChromeOpAction(op: ChromeSyncOp): string {
+  if (op.action === 'update') return '改标题';
+  if (op.action === 'move') return '移动文件夹';
+  return '删除书签';
+}
+
+function formatChromeOpDetail(op: ChromeSyncOp): string {
+  if (op.action === 'update') return `Chrome 标题将改为：${op.title || '未命名'}`;
+  if (op.action === 'move') return `Chrome 书签将移动到：${op.folderPath || '书签栏'}`;
+  return `Chrome 中会删除这条书签：${op.bookmarkUrl || op.chromeId}`;
 }

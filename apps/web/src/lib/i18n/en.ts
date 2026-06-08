@@ -2,11 +2,12 @@ import type { Translations } from './zh';
 
 export const en: Translations = {
   nav: {
-    dashboard: 'Dashboard',
-    import: 'Import',
-    library: 'Library',
-    search: 'Search',
-    rescue: 'Rescue',
+    dashboard: 'Home',
+    import: 'Import Bookmarks',
+    library: 'My Bookmarks',
+    tags: 'Tags',
+    search: 'Smart Search',
+    rescue: 'Organize',
     taxonomy: 'Taxonomy',
     settings: 'Settings',
     mcp: 'MCP',
@@ -14,33 +15,31 @@ export const en: Translations = {
 
   dashboard: {
     welcome: 'Welcome to SiftMarks',
-    welcomeDesc: 'Turn your messy browser bookmarks into searchable AI memory. Import your bookmarks to get started.',
-    importBtn: 'Import Bookmarks',
-    needsRescue: 'Your bookmark library needs rescue.',
-    needsRescueDesc: (stats: { bookmarks: number; duplicates: number; broken: number; missingTags: number }) => {
+    welcomeDesc: 'A local-first AI bookmark manager for saving, organizing, searching, correcting, reviewing, and syncing bookmarks.',
+    importBtn: 'Import bookmarks',
+    needsRescue: 'Your bookmark library has items to organize.',
+    needsRescueDesc: (stats: { bookmarks: number; broken: number }) => {
       let msg = `${stats.bookmarks.toLocaleString()} bookmarks imported. `;
-      if (stats.duplicates > 0) msg += `${stats.duplicates} duplicates found. `;
       if (stats.broken > 0) msg += `${stats.broken} broken links detected. `;
-      if (stats.missingTags > 0) msg += `${stats.missingTags} bookmarks missing tags.`;
       return msg;
     },
-    runRescue: 'Run Bookmark Rescue',
+    runRescue: 'View organize suggestions',
     stats: {
       bookmarks: 'Bookmarks',
       folders: 'Folders',
       tags: 'Tags',
-      duplicates: 'Duplicates',
+      duplicates: 'Already skipped',
       broken: 'Broken',
       missingSummaries: 'Missing Summaries',
       missingTags: 'Missing Tags',
     },
     actions: {
-      import: 'Import Bookmarks',
-      importDesc: "Upload your browser's bookmarks.html file",
-      rescue: 'Run Bookmark Rescue',
-      rescueDesc: 'Find duplicates, broken links, and generate cleanup suggestions',
-      search: 'Search Memory',
-      searchDesc: 'Find bookmarks by keyword or natural language',
+      import: 'Save / import bookmarks',
+      importDesc: 'Bring browser bookmarks into the local library, then analyze content asynchronously',
+      rescue: 'Handle organize suggestions',
+      rescueDesc: 'Accept, edit, or dismiss rename, tag, and broken-link suggestions',
+      search: 'Smart search',
+      searchDesc: 'Search by what the page was for when you cannot remember the title',
       mcp: 'MCP Server',
       mcpDesc: 'Connect your bookmarks to AI tools',
     },
@@ -54,12 +53,12 @@ export const en: Translations = {
     importBtn: 'Import Bookmarks',
     importing: 'Importing...',
     complete: 'Import Complete!',
-    imported: 'Imported',
+    imported: 'New bookmarks',
     folders: 'Folders',
-    duplicates: 'Duplicates',
+    duplicates: 'Already existed',
     missingTitles: 'Missing titles',
     viewLibrary: 'View Library',
-    runRescue: 'Run Rescue',
+    runRescue: 'Review Suggestions',
     detected: 'bookmarks detected',
     oneClick: 'One-click import →',
     manualUpload: 'Or upload a bookmarks.html file manually...',
@@ -73,7 +72,7 @@ export const en: Translations = {
     filters: {
       all: 'All',
       untagged: 'Untagged',
-      duplicates: 'Duplicates',
+      duplicates: 'Already existed',
       broken: 'Broken',
       missingSummary: 'Missing Summary',
     },
@@ -85,7 +84,7 @@ export const en: Translations = {
       allTags: 'All tags',
     },
     untitled: '(untitled)',
-    dup: 'dup',
+    dup: 'already existed',
     broken: 'broken',
     prev: 'Previous',
     next: 'Next',
@@ -93,10 +92,10 @@ export const en: Translations = {
   },
 
   search: {
-    title: 'Search',
-    placeholder: 'Search by memory, not keywords...',
+    title: 'Smart Search',
+    placeholder: 'I forgot the title, but I remember what it was for...',
     keyword: 'Keyword',
-    memory: 'Memory',
+    memory: 'Semantic / Memory',
     searchBtn: 'Search',
     searching: 'Searching...',
     noResults: 'No matching bookmarks found. Try a broader search or index more bookmarks.',
@@ -104,9 +103,9 @@ export const en: Translations = {
   },
 
   rescue: {
-    title: 'Bookmark Rescue',
-    desc: 'Review changes like a pull request before applying them.',
-    runScan: 'Run Rescue Scan',
+    title: 'Organize Suggestions',
+    desc: 'Review AI organize and correction suggestions like a pull request before applying them.',
+    runScan: 'Generate Suggestions',
     scanning: 'Scanning...',
     cleanupPR: (n: number) => `Cleanup PR: ${n} proposed changes for your bookmark library.`,
     cleanupPRDesc: 'Review every rename, tag, move, and deletion before applying.',
@@ -126,12 +125,12 @@ export const en: Translations = {
     syncUseExtension: 'Open the SiftMarks Chrome extension and click "Sync Back to Chrome" to apply them through the browser API.',
     syncNoOps: 'No Chrome bookmark operations need to be applied.',
     noPending: 'No pending suggestions. Your bookmarks are clean!',
-    clickToScan: 'Click "Run Rescue Scan" to find improvements.',
+    clickToScan: 'Click "Generate Suggestions" to find improvements.',
     accept: 'Accept',
     dismiss: 'Dismiss',
     confidence: (n: number) => `${n}% confidence`,
     types: {
-      merge_duplicate: 'Duplicates',
+      merge_duplicate: 'Already existed',
       delete_broken: 'Broken Links',
       rename: 'Rename',
       tag: 'Tags',
@@ -214,7 +213,7 @@ export const en: Translations = {
 
   taxonomy: {
     title: 'AI Taxonomy',
-    desc: 'Let AI design a category scheme tailored to your bookmark library, then propose a move for every bookmark in one click. Nothing touches Chrome directly — every move shows up in Rescue for you to review.',
+    desc: 'Let AI design a category scheme tailored to your bookmark library, then propose a move for every bookmark in one click. Nothing touches Chrome directly — every move shows up in Organize Suggestions for you to review.',
     notGeneratedYet: 'No taxonomy yet. Click below and AI will read your full library and propose 8-15 categories that fit your content.',
     libraryEmpty: 'Library is empty. Import some bookmarks first.',
     generate: 'Generate AI taxonomy',
@@ -226,7 +225,7 @@ export const en: Translations = {
     appliedSummary: (created: number, total: number) => `Created move suggestions for ${created} of ${total} bookmarks.`,
     appliedSkipped: (n: number) => `${n} bookmarks were already in the right category — skipped.`,
     appliedErrors: (n: number) => `${n} batch(es) failed and fell back to the default category.`,
-    viewSuggestions: 'Review in Rescue',
+    viewSuggestions: 'Review in Organize Suggestions',
     deleteAll: 'Delete this taxonomy',
     confirmDelete: 'Delete the current taxonomy?',
     summary: (n: number, model: string, when: string) => `${n} categories · model ${model} · generated ${when}`,

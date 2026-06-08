@@ -34,6 +34,19 @@ const server = new McpServer({
   version: '0.1.0',
 });
 
+type SearchItem = ReturnType<typeof keywordSearch>[number];
+
+function mergeSearchResults(primary: SearchItem[], secondary: SearchItem[], limit: number): SearchItem[] {
+  const byId = new Map<string, SearchItem>();
+  for (const result of [...primary, ...secondary]) {
+    const existing = byId.get(result.bookmark.id);
+    if (!existing || result.score > existing.score) {
+      byId.set(result.bookmark.id, result);
+    }
+  }
+  return [...byId.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
 // Tool 1: search_bookmarks
 server.tool(
   'search_bookmarks',
@@ -43,7 +56,28 @@ server.tool(
     limit: z.number().optional().default(10).describe('Max results'),
   },
   async ({ query, limit }) => {
-    const results = keywordSearch(db, { query, limit });
+    let rewrittenQuery = query;
+    let queryEmbedding: number[] | undefined;
+
+    try {
+      rewrittenQuery = await provider.rewriteSearchQuery(query);
+      if (!rewrittenQuery.trim()) rewrittenQuery = query;
+    } catch {
+      rewrittenQuery = query;
+    }
+
+    try {
+      queryEmbedding = await provider.generateEmbedding(`${query}\n${rewrittenQuery}`);
+      if (queryEmbedding.length === 0) queryEmbedding = undefined;
+    } catch {
+      queryEmbedding = undefined;
+    }
+
+    const semanticResults = hybridSearch(db, { query, limit }, queryEmbedding);
+    const keywordResults = rewrittenQuery === query
+      ? []
+      : keywordSearch(db, { query: rewrittenQuery, limit });
+    const results = mergeSearchResults(semanticResults, keywordResults, limit);
 
     return {
       content: [
@@ -59,6 +93,9 @@ server.tool(
                 tags: r.tags,
                 score: Math.round(r.score * 100) / 100,
               })),
+              mode: 'ai_search',
+              rewrittenQuery,
+              aiPowered: provider.name !== 'mock',
             },
             null,
             2
@@ -316,9 +353,11 @@ server.tool(
     });
 
     if (tags) {
+      const seenTagKeys = new Set<string>();
       for (const tagName of tags) {
         const normalizedName = normalizeTagName(tagName);
-        if (!normalizedName) continue;
+        if (!normalizedName || seenTagKeys.has(normalizedName)) continue;
+        seenTagKeys.add(normalizedName);
 
         let tag = db.getTagByNormalizedName(normalizedName);
         if (!tag) {
@@ -372,7 +411,7 @@ server.tool(
               suggestions_count: suggestions.length,
               duplicates: byType.get('merge_duplicate') ?? 0,
               broken: byType.get('delete_broken') ?? 0,
-              missing_tags: byType.get('tag') ?? 0,
+              classification_suggestions: byType.get('move') ?? 0,
               renames: byType.get('rename') ?? 0,
             },
             null,

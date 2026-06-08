@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { SiftMarksDB } from '@siftmarks/db';
 import {
   generateId,
+  normalizeFolderPath,
   normalizeUrl,
   nowISO,
   type Bookmark,
@@ -28,36 +29,21 @@ export function importBookmarks(parsed: ParsedBookmark[], db: SiftMarksDB): Impo
   db.transaction(() => {
     for (const pb of parsed) {
       const normalized = normalizeUrl(pb.url);
+      const folderPath = normalizeFolderPath(pb.folderPath);
 
       // Check if this exact URL already exists
       const existing = db.getBookmarkByNormalizedUrl(normalized);
       if (existing) {
         duplicates++;
-        // Mark existing as duplicate if not already
-        if (!existing.isDuplicate) {
-          const groupId = existing.duplicateGroupId || generateId();
-          db.updateBookmark(existing.id, {
-            isDuplicate: true,
-            duplicateGroupId: groupId,
-          });
-        }
-        // Update chrome_id if we have one and existing doesn't
-        if (pb.chromeId && !existing.chromeId) {
-          db.updateBookmark(existing.id, {
-            chromeId: pb.chromeId,
-            chromeParentId: pb.chromeParentId ?? null,
-          } as any);
-        }
         continue;
+      }
+
+      if (folderPath) {
+        folderPaths.add(folderPath);
       }
 
       if (!pb.title || pb.title.trim() === '') {
         missingTitles++;
-      }
-
-      // Track folder
-      if (pb.folderPath) {
-        folderPaths.add(pb.folderPath);
       }
 
       const bookmark: Bookmark = {
@@ -69,7 +55,7 @@ export function importBookmarks(parsed: ParsedBookmark[], db: SiftMarksDB): Impo
         description: null,
         contentText: null,
         summary: null,
-        folderPath: pb.folderPath || null,
+        folderPath: folderPath || null,
         faviconUrl: pb.icon || null,
         status: 'unchecked',
         httpStatus: null,

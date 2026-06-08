@@ -10,6 +10,21 @@ interface DetectedProfile {
   bookmarkCount: number;
 }
 
+interface ImportResult {
+  imported: number;
+  folders: number;
+  duplicates: number;
+  missingTitles: number;
+}
+
+interface IndexResult {
+  processed: number;
+  summaries: number;
+  tags: number;
+  embeddings: number;
+  errors: number;
+}
+
 export default function ImportPage() {
   const { t } = useI18n();
   const router = useRouter();
@@ -18,10 +33,12 @@ export default function ImportPage() {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [importingProfile, setImportingProfile] = useState<string | null>(null);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [showManual, setShowManual] = useState(false);
+  const [indexing, setIndexing] = useState(false);
+  const [indexResult, setIndexResult] = useState<IndexResult | null>(null);
 
   // Auto-detect on mount
   useEffect(() => {
@@ -42,14 +59,14 @@ export default function ImportPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: profile.path }),
       });
-      const data = await res.json();
+      const data = await res.json() as Partial<ImportResult> & { error?: string };
       if (!res.ok) {
         setError(data.error || 'Import failed');
       } else {
-        setResult(data);
+        setResult(data as ImportResult);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Import failed');
     } finally {
       setImportingProfile(null);
     }
@@ -77,16 +94,40 @@ export default function ImportPage() {
       const formData = new FormData();
       formData.append('file', file);
       const res = await fetch('/api/import', { method: 'POST', body: formData });
-      const data = await res.json();
+      const data = await res.json() as Partial<ImportResult> & { error?: string };
       if (!res.ok) {
         setError(data.error || 'Import failed');
       } else {
-        setResult(data);
+        setResult(data as ImportResult);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Import failed');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleIndexMissing = async () => {
+    setIndexing(true);
+    setIndexResult(null);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/index-bookmarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 100, onlyMissing: true, useAI: true }),
+      });
+      const data = await res.json() as Partial<IndexResult> & { error?: string };
+      if (!res.ok) {
+        setError(data.error || 'Indexing failed');
+      } else {
+        setIndexResult(data as IndexResult);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Indexing failed');
+    } finally {
+      setIndexing(false);
     }
   };
 
@@ -98,9 +139,28 @@ export default function ImportPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-2">{t.import.title}</h1>
-      <p className="text-muted mb-6">{t.import.desc}</p>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <header className="rounded-xl border border-[#dfe6f2] bg-white p-6 shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
+        <p className="text-xs font-semibold uppercase tracking-wide text-[#1463ff]">Safe Import</p>
+        <h1 className="mt-2 text-[24px] font-bold tracking-tight text-[#101828]">{t.import.title}</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-7 text-[#475467]">
+          {t.import.desc} SiftMarks 会先只读导入所有可解析书签并重建本地关键词索引；网页抓取、AI 摘要、标签和坏链检测在导入后单独执行，避免少数超时链接拖垮 2k 级别导入。
+        </p>
+      </header>
+
+      <section className="grid gap-3 md:grid-cols-4">
+        {[
+          ['只读导入', '不直接修改 Chrome 书签'],
+          ['已存在跳过', '相同链接不会二次入库'],
+          ['URL 规范化', '去追踪参数并识别已保存链接'],
+          ['导入后分析', '摘要、最多 3 个标签和索引独立执行'],
+        ].map(([title, desc]) => (
+          <div key={title} className="rounded-xl border border-[#dfe6f2] bg-white p-4">
+            <div className="text-sm font-bold text-[#101828]">{title}</div>
+            <div className="mt-1 text-xs leading-5 text-[#667085]">{desc}</div>
+          </div>
+        ))}
+      </section>
 
       {/* Auto-detect section */}
       {detecting ? (
@@ -129,7 +189,7 @@ export default function ImportPage() {
                   </div>
                 </div>
                 <div className="text-accent font-medium text-sm">
-                  {t.import.oneClick}
+                  只读入库 →
                 </div>
               </button>
             ))}
@@ -139,26 +199,39 @@ export default function ImportPage() {
 
       {/* Result */}
       {result && (
-        <div className="mb-6 p-6 rounded-lg bg-success-light border border-success/20">
-          <h3 className="font-semibold mb-3">{t.import.complete}</h3>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>{t.import.imported}: <span className="font-medium">{result.imported}</span></div>
-            <div>{t.import.folders}: <span className="font-medium">{result.folders}</span></div>
-            <div>{t.import.duplicates}: <span className="font-medium">{result.duplicates}</span></div>
-            <div>{t.import.missingTitles}: <span className="font-medium">{result.missingTitles}</span></div>
+        <div className="rounded-xl border border-[#b7ebc6] bg-[#f0fff4] p-6">
+          <h3 className="font-semibold text-[#157347]">{t.import.complete}</h3>
+          <p className="mt-1 text-sm text-[#344054]">新书签已经进入本地库；已存在链接会直接跳过，不会二次导入。下一步可以异步分析内容，失败项会留在待审查队列里。</p>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+            <ResultMetric label={t.import.imported} value={result.imported} />
+            <ResultMetric label={t.import.folders} value={result.folders} />
+            <ResultMetric label={t.import.duplicates} value={result.duplicates} />
+            <ResultMetric label={t.import.missingTitles} value={result.missingTitles} />
           </div>
-          <div className="mt-4 flex gap-2">
+          {indexResult && (
+            <div className="mt-4 rounded-lg border border-[#dfe6f2] bg-white/80 px-4 py-3 text-sm text-[#344054]">
+              已处理 {indexResult.processed} 条；生成摘要 {indexResult.summaries} 个、标签 {indexResult.tags} 个、embedding {indexResult.embeddings} 个；错误 {indexResult.errors} 个。
+            </div>
+          )}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={handleIndexMissing}
+              disabled={indexing}
+              className="px-4 py-2 bg-[#1463ff] text-white rounded-md text-sm font-semibold hover:opacity-90 transition disabled:opacity-50"
+            >
+              {indexing ? '分析中...' : '分析摘要和搜索索引'}
+            </button>
             <button
               onClick={() => router.push('/library')}
-              className="px-4 py-2 bg-accent text-white rounded-md text-sm hover:opacity-90 transition"
+              className="px-4 py-2 border border-[#dfe6f2] bg-white rounded-md text-sm font-semibold text-[#344054] hover:border-[#b9c7dc] transition"
             >
               {t.import.viewLibrary}
             </button>
             <button
               onClick={() => router.push('/rescue')}
-              className="px-4 py-2 border border-border rounded-md text-sm hover:bg-card transition"
+              className="px-4 py-2 border border-[#dfe6f2] bg-white rounded-md text-sm font-semibold text-[#344054] hover:border-[#b9c7dc] transition"
             >
-              {t.import.runRescue}
+              去审查建议
             </button>
           </div>
         </div>
@@ -170,7 +243,7 @@ export default function ImportPage() {
 
       {/* Manual upload fallback */}
       {!result && (
-        <div className="mt-2">
+        <div className="rounded-xl border border-[#dfe6f2] bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
           {!showManual && profiles.length > 0 ? (
             <button
               onClick={() => setShowManual(true)}
@@ -221,6 +294,15 @@ export default function ImportPage() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function ResultMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-[#dfe6f2] bg-white/85 p-3">
+      <div className="text-xl font-bold text-[#101828]">{value.toLocaleString()}</div>
+      <div className="mt-1 text-xs text-[#667085]">{label}</div>
     </div>
   );
 }

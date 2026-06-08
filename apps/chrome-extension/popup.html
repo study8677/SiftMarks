@@ -1,245 +1,1344 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SiftMark 书签助手</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    body {
-      width: 380px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 13px;
-      color: #1a1a1a;
-      background: #fafafa;
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
     }
 
-    .header {
-      background: #2563eb;
-      color: white;
-      padding: 14px 16px;
+    html {
+      width: 360px;
+      overflow: hidden;
+    }
+
+    :root {
+      --blue: #0f73ff;
+      --blue-deep: #0458e8;
+      --ink: #121826;
+      --muted: #7a8497;
+      --line: #e1e7f0;
+      --panel: #ffffff;
+      --soft: #f7faff;
+      --orange: #fb8a00;
+      --purple: #7147ff;
+      --green: #16c985;
+      --shadow: 0 18px 38px rgba(18, 28, 44, 0.13);
+    }
+
+    body {
+      width: 360px;
+      min-height: 480px;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% -8%, rgba(42, 142, 255, 0.14), transparent 30%),
+        linear-gradient(145deg, #f7fbff 0%, #eef3f8 100%);
+    }
+
+    button {
+      border: 0;
+      font: inherit;
+      color: inherit;
+      background: transparent;
+    }
+
+    .icon-defs {
+      display: none;
+    }
+
+    .popup-shell {
+      position: relative;
+      margin: 6px;
+      padding: 16px 15px 12px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(217, 225, 236, 0.95);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .view[hidden] {
+      display: none;
+    }
+
+    .app-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 13px;
+      margin-bottom: 13px;
     }
-    .header h1 { font-size: 16px; font-weight: 700; }
-    .header .lang-btn {
-      background: rgba(255,255,255,0.2);
-      border: none;
-      color: white;
-      padding: 2px 8px;
-      border-radius: 4px;
+
+    .config-header {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr) 32px;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .config-header .brand {
+      justify-self: start;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 10px;
+    }
+
+    .brand-mark {
+      width: 30px;
+      height: 30px;
+      flex: 0 0 auto;
+      border-radius: 9px;
+      filter: drop-shadow(0 7px 12px rgba(15, 115, 255, 0.22));
+    }
+
+    .brand-title {
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+      line-height: 1.05;
+      white-space: nowrap;
+    }
+
+    .brand-title .en {
+      color: var(--blue);
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .brand-title .zh {
+      color: #111827;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin-top: 3px;
+      color: #8b94a7;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .icon-button {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      flex: 0 0 auto;
+      color: #687386;
+      border-radius: 10px;
       cursor: pointer;
-      font-size: 11px;
+      transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
     }
-    .header .lang-btn:hover { background: rgba(255,255,255,0.3); }
+
+    .icon-button:hover {
+      color: var(--blue);
+      background: #eef5ff;
+      transform: translateY(-1px);
+    }
+
+    .icon-button svg {
+      width: 22px;
+      height: 22px;
+      stroke-width: 2.4;
+    }
+
+    .back-button {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      color: #5f687c;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+    }
+
+    .back-button:hover {
+      color: var(--blue);
+      background: #eef5ff;
+      transform: translateX(-1px);
+    }
+
+    .back-button svg {
+      width: 21px;
+      height: 21px;
+      stroke-width: 2.4;
+    }
 
     .offline {
-      background: #fef3c7;
-      color: #92400e;
-      padding: 10px 16px;
-      font-size: 12px;
       display: none;
+      position: absolute;
+      top: 10px;
+      left: 13px;
+      right: 13px;
+      z-index: 4;
+      margin: 0;
+      padding: 7px 9px;
+      color: #914600;
+      font-size: 12px;
+      line-height: 1.45;
+      background: #fff5dc;
+      border: 1px solid #ffe0a4;
+      border-radius: 9px;
+      box-shadow: 0 10px 22px rgba(18, 28, 44, 0.1);
     }
-    .offline a { color: #92400e; font-weight: 600; }
 
-    .section { padding: 12px 16px; border-bottom: 1px solid #e5e7eb; }
-    .section:last-child { border-bottom: none; }
-
-    /* Stats grid */
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
+    .offline code {
+      margin-left: 4px;
+      color: #7a3d00;
+      font-weight: 700;
     }
-    .stat-card {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 10px;
+
+    .toast {
+      position: absolute;
+      top: 12px;
+      left: 14px;
+      right: 14px;
+      z-index: 3;
+      display: none;
+      padding: 8px 10px;
+      color: #126038;
+      font-size: 12px;
+      font-weight: 650;
+      line-height: 1.4;
       text-align: center;
+      background: #e6fbf1;
+      border: 1px solid #b9f0d4;
+      border-radius: 10px;
+      box-shadow: 0 10px 22px rgba(18, 28, 44, 0.11);
     }
-    .stat-card .num { font-size: 20px; font-weight: 700; color: #2563eb; }
-    .stat-card .label { font-size: 11px; color: #6b7280; margin-top: 2px; }
 
-    /* Actions */
-    .actions { display: flex; flex-direction: column; gap: 8px; }
-    .btn {
+    .toast.error {
+      color: #9b1c1c;
+      background: #fff0f0;
+      border-color: #ffd1d1;
+    }
+
+    .toast.info {
+      color: #075fb8;
+      background: #eaf4ff;
+      border-color: #b8dcff;
+    }
+
+    .ai-card {
+      display: flex;
+      min-height: 96px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 10px;
+      padding: 13px;
+      text-align: center;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(15, 115, 255, 0.04), transparent 42%),
+        var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 12px 24px rgba(18, 28, 44, 0.055);
+    }
+
+    .ai-card.configured {
+      background:
+        radial-gradient(circle at 50% 0%, rgba(22, 201, 133, 0.08), transparent 42%),
+        var(--panel);
+    }
+
+    .ai-card h2 {
+      font-size: 15px;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .ai-card p {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .primary-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 37px;
+      padding: 0 23px;
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0;
+      white-space: nowrap;
+      background: linear-gradient(135deg, var(--blue) 0%, var(--blue-deep) 100%);
+      border-radius: 10px;
+      box-shadow: 0 10px 20px rgba(15, 115, 255, 0.21);
+      cursor: pointer;
+      transition: opacity 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .primary-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 24px rgba(15, 115, 255, 0.27);
+    }
+
+    .primary-button:disabled {
+      cursor: wait;
+      opacity: 0.72;
+      transform: none;
+    }
+
+    .ai-card .primary-button {
+      min-width: 144px;
+      margin-top: 9px;
+    }
+
+    .section-block {
+      margin-top: 9px;
+    }
+
+    .section-title {
+      margin-bottom: 5px;
+      color: #23304a;
+      font-size: 13px;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .list-card {
+      overflow: hidden;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 13px;
+    }
+
+    .menu-row {
+      display: flex;
+      width: 100%;
+      min-height: 50px;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 8px 8px 10px;
+      text-align: left;
+      cursor: pointer;
+      transition: background 0.16s ease;
+    }
+
+    .menu-row + .menu-row {
+      border-top: 1px solid var(--line);
+    }
+
+    .menu-row:hover {
+      background: #f7fbff;
+    }
+
+    .menu-row:disabled {
+      cursor: wait;
+      opacity: 0.66;
+    }
+
+    .tile-icon {
+      display: grid;
+      width: 29px;
+      height: 29px;
+      place-items: center;
+      flex: 0 0 auto;
+      color: #ffffff;
+      border-radius: 9px;
+      box-shadow: 0 8px 16px rgba(18, 28, 44, 0.11);
+    }
+
+    .tile-icon svg {
+      width: 17px;
+      height: 17px;
+      stroke-width: 2.7;
+    }
+
+    .tile-icon.blue {
+      background: linear-gradient(135deg, #1792ff 0%, #055cf1 100%);
+    }
+
+    .tile-icon.green {
+      background: linear-gradient(135deg, #18d89b 0%, #14ae62 100%);
+    }
+
+    .tile-icon.orange {
+      background: linear-gradient(135deg, #ffb33d 0%, #ff8b14 100%);
+    }
+
+    .tile-icon.purple {
+      background: linear-gradient(135deg, #875cff 0%, #5b35e8 100%);
+    }
+
+    .row-copy {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .row-title {
+      display: block;
+      color: #151b2b;
+      font-size: 14px;
+      font-weight: 850;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .row-desc {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .row-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+      margin-left: 4px;
+    }
+
+    .count-text {
+      min-width: 72px;
+      font-size: 13px;
+      font-weight: 800;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .count-text.orange {
+      color: var(--orange);
+    }
+
+    .count-text.purple {
+      color: var(--purple);
+    }
+
+    .chevron {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+      color: #6f788c;
+      stroke-width: 2.5;
+    }
+
+    .organize-button {
+      width: 100%;
+      height: 38px;
+      margin-top: 11px;
+      border-radius: 9px;
+    }
+
+    .dashboard-link {
+      display: flex;
+      width: 100%;
+      height: 26px;
+      align-items: center;
+      justify-content: center;
+      margin-top: 3px;
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 850;
+      cursor: pointer;
+      border-radius: 9px;
+      transition: background 0.16s ease;
+    }
+
+    .dashboard-link:hover {
+      background: #edf5ff;
+    }
+
+    .config-card {
+      margin-top: 6px;
+      padding: 18px 16px 17px;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(15, 115, 255, 0.035), transparent 40%),
+        var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      box-shadow: 0 13px 26px rgba(18, 28, 44, 0.065);
+    }
+
+    .config-card h2 {
+      color: #10131f;
+      font-size: 15px;
+      font-weight: 850;
+      text-align: center;
+      letter-spacing: 0;
+    }
+
+    .config-subtitle {
+      margin-top: 7px;
+      margin-bottom: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+      text-align: center;
+      line-height: 1.45;
+    }
+
+    .form-group {
+      margin-top: 11px;
+    }
+
+    .form-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #151b2b;
+      font-size: 13px;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .field-wrap {
+      position: relative;
+    }
+
+    .form-control {
+      width: 100%;
+      height: 38px;
+      padding: 0 12px;
+      color: #101827;
+      font-size: 14px;
+      background: #ffffff;
+      border: 1px solid #d5dde8;
+      border-radius: 9px;
+      outline: none;
+      transition: border-color 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .form-control:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(15, 115, 255, 0.12);
+    }
+
+    .form-control::placeholder {
+      color: #8b94a7;
+    }
+
+    select.form-control {
+      appearance: none;
+      padding-right: 38px;
+      cursor: pointer;
+    }
+
+    .select-icon {
+      position: absolute;
+      top: 50%;
+      right: 12px;
+      width: 16px;
+      height: 16px;
+      color: #657086;
+      pointer-events: none;
+      transform: translateY(-50%) rotate(90deg);
+      stroke-width: 2.6;
+    }
+
+    .helper-text {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .outline-button {
+      display: inline-flex;
+      width: 100%;
+      height: 38px;
+      align-items: center;
+      justify-content: center;
+      margin-top: 16px;
+      color: var(--blue);
+      font-size: 14px;
+      font-weight: 850;
+      background: #ffffff;
+      border: 1px solid var(--blue);
+      border-radius: 9px;
+      cursor: pointer;
+      transition: background 0.16s ease, opacity 0.16s ease, transform 0.16s ease;
+    }
+
+    .outline-button:hover {
+      background: #eef6ff;
+      transform: translateY(-1px);
+    }
+
+    .outline-button:disabled {
+      cursor: wait;
+      opacity: 0.65;
+      transform: none;
+    }
+
+    .config-save-button {
+      width: 100%;
+      height: 38px;
+      margin-top: 8px;
+      border-radius: 9px;
+    }
+
+    .edit-card {
+      padding: 10px 10px 0;
+      overflow: hidden;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      box-shadow: 0 13px 26px rgba(18, 28, 44, 0.065);
+    }
+
+    .edit-title {
+      color: #10131f;
+      font-size: 16px;
+      font-weight: 850;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .edit-subtitle {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .bookmark-summary {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 10px 14px;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      background: white;
-      cursor: pointer;
-      font-size: 13px;
-      color: #1a1a1a;
-      transition: all 0.15s;
-      text-align: left;
-      width: 100%;
-    }
-    .btn:hover { border-color: #2563eb; background: #eff6ff; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn.primary {
-      background: #2563eb;
-      color: white;
-      border-color: #2563eb;
-    }
-    .btn.primary:hover { background: #1d4ed8; }
-    .btn .icon { font-size: 18px; }
-    .btn .text { flex: 1; }
-    .btn .desc { font-size: 11px; color: #6b7280; margin-top: 1px; }
-    .btn.primary .desc { color: rgba(255,255,255,0.7); }
-
-    /* Search */
-    .search-box {
-      display: flex;
-      gap: 6px;
-    }
-    .search-box input {
-      flex: 1;
-      padding: 8px 12px;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      font-size: 13px;
-      outline: none;
-      background: white;
-    }
-    .search-box input:focus { border-color: #2563eb; }
-    .search-box button {
-      padding: 8px 14px;
-      background: #2563eb;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 13px;
+      min-height: 46px;
+      margin-top: 8px;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #ffffff;
     }
 
-    /* Results */
-    .results { margin-top: 10px; }
-    .result-item {
-      padding: 8px 0;
-      border-bottom: 1px solid #f3f4f6;
+    .bookmark-favicon {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      flex: 0 0 auto;
+      color: #111827;
+      font-size: 14px;
+      font-weight: 850;
+      background: #f7faff;
+      border: 1px solid #dbe5f3;
+      border-radius: 9px;
     }
-    .result-item:last-child { border: none; }
-    .result-item a {
-      color: #1a1a1a;
-      text-decoration: none;
-      font-weight: 500;
+
+    .bookmark-main {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .bookmark-title {
+      color: #101827;
       font-size: 13px;
-    }
-    .result-item a:hover { color: #2563eb; }
-    .result-item .url {
-      font-size: 11px;
-      color: #6b7280;
+      font-weight: 850;
+      line-height: 1.2;
+      white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      white-space: nowrap;
     }
-    .result-item .tags {
-      display: flex;
-      gap: 4px;
+
+    .bookmark-url {
       margin-top: 3px;
-      flex-wrap: wrap;
-    }
-    .result-item .tag {
-      font-size: 10px;
-      padding: 1px 6px;
-      background: #dbeafe;
-      color: #2563eb;
-      border-radius: 4px;
-    }
-
-    .empty { color: #9ca3af; text-align: center; padding: 16px; font-size: 12px; }
-
-    .status-msg {
-      padding: 8px 16px;
-      font-size: 12px;
-      text-align: center;
-    }
-    .status-msg.success { background: #dcfce7; color: #166534; }
-    .status-msg.error { background: #fee2e2; color: #991b1b; }
-
-    .footer {
-      padding: 8px 16px;
-      text-align: center;
+      color: #6f7b91;
       font-size: 11px;
-      color: #9ca3af;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .footer a { color: #2563eb; text-decoration: none; }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      flex: 0 0 auto;
+      padding: 4px 7px;
+      color: #159b65;
+      font-size: 11px;
+      font-weight: 800;
+      background: #dcf5e8;
+      border-radius: 8px;
+    }
+
+    .status-dot {
+      width: 5px;
+      height: 5px;
+      background: #15b66f;
+      border-radius: 999px;
+    }
+
+    .edit-form {
+      margin-top: 8px;
+    }
+
+    .edit-form .form-group {
+      margin-top: 6px;
+    }
+
+    .edit-form .form-label {
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .edit-form .form-control {
+      height: 29px;
+      font-size: 13px;
+      border-radius: 8px;
+    }
+
+    .tag-box {
+      padding: 6px;
+      border: 1px solid #d5dde8;
+      border-radius: 10px;
+      background: #ffffff;
+    }
+
+    .tag-chip-row,
+    .common-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .tag-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 21px;
+      padding: 0 7px;
+      color: #0c4fc2;
+      font-size: 11px;
+      font-weight: 700;
+      background: #eef5ff;
+      border: 1px solid #cfe0ff;
+      border-radius: 8px;
+      cursor: default;
+    }
+
+    .tag-chip button {
+      color: #0c4fc2;
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .tag-input {
+      width: 100%;
+      height: 27px;
+      margin-top: 6px;
+      padding: 0 9px;
+      color: #101827;
+      font-size: 13px;
+      border: 1px solid #d5dde8;
+      border-radius: 8px;
+      outline: none;
+    }
+
+    .tag-input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(15, 115, 255, 0.1);
+    }
+
+    .common-label {
+      margin: 6px 0 4px;
+      color: #6f7b91;
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .common-tag {
+      min-height: 21px;
+      padding: 0 8px;
+      color: #657086;
+      font-size: 11px;
+      font-weight: 700;
+      background: #f8fbff;
+      border: 1px solid #d5dde8;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .ai-tag-hint {
+      margin-top: 5px;
+      color: #6799ff;
+      font-size: 11px;
+      line-height: 1.25;
+    }
+
+    .summary-control {
+      min-height: 44px;
+      padding-top: 6px;
+      resize: none;
+      line-height: 1.45;
+    }
+
+    .edit-action-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-top: 7px;
+    }
+
+    .edit-action-row .outline-button {
+      height: 30px;
+      margin-top: 0;
+      font-size: 11px;
+      gap: 6px;
+    }
+
+    .edit-footer {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1.15fr;
+      gap: 7px;
+      align-items: center;
+      margin: 8px -10px 0;
+      padding: 8px 10px;
+      border-top: 1px solid var(--line);
+      background: rgba(248, 251, 255, 0.68);
+    }
+
+    .danger-link {
+      justify-self: start;
+      color: #f02828;
+      font-size: 13px;
+      font-weight: 750;
+      cursor: pointer;
+    }
+
+    .secondary-button {
+      display: inline-flex;
+      height: 32px;
+      align-items: center;
+      justify-content: center;
+      color: #4f5a70;
+      font-size: 13px;
+      font-weight: 800;
+      background: #ffffff;
+      border: 1px solid #b8c3d5;
+      border-radius: 9px;
+      cursor: pointer;
+    }
+
+    .edit-save-button {
+      width: 100%;
+      height: 32px;
+      border-radius: 9px;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    html,
+    body {
+      width: 320px;
+    }
+
+    body {
+      min-height: 0;
+      background: #f7faff;
+    }
+
+    .popup-shell {
+      width: 320px;
+      min-height: 0;
+      margin: 0;
+      padding: 10px 9px 9px;
+      border: 0;
+      border-radius: 0;
+      background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+      box-shadow: none;
+    }
+
+    .app-header {
+      margin-bottom: 8px;
+    }
+
+    .brand {
+      gap: 8px;
+    }
+
+    .brand-mark {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+    }
+
+    .brand-title .en {
+      font-size: 15px;
+    }
+
+    .brand-title .zh {
+      font-size: 12px;
+    }
+
+    .subtitle {
+      display: none;
+    }
+
+    .icon-button {
+      width: 29px;
+      height: 29px;
+      border-radius: 8px;
+    }
+
+    .icon-button svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .ai-card {
+      min-height: 0;
+      flex-direction: row;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding: 8px 9px;
+      text-align: left;
+      border-radius: 10px;
+      box-shadow: none;
+    }
+
+    .ai-card h2 {
+      min-width: 0;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ai-card p {
+      display: none;
+    }
+
+    .ai-card .primary-button {
+      min-width: 68px;
+      min-height: 28px;
+      margin-top: 0;
+      padding: 0 9px;
+      font-size: 12px;
+      border-radius: 8px;
+      box-shadow: none;
+    }
+
+    .section-block {
+      margin-top: 7px;
+    }
+
+    .section-title {
+      display: none;
+    }
+
+    .review-block {
+      display: none;
+    }
+
+    .list-card {
+      border-radius: 10px;
+      box-shadow: 0 7px 18px rgba(24, 36, 56, 0.045);
+    }
+
+    .menu-row {
+      min-height: 40px;
+      gap: 7px;
+      padding: 6px 7px;
+    }
+
+    .tile-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      box-shadow: none;
+    }
+
+    .tile-icon svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .row-title {
+      font-size: 13px;
+    }
+
+    .row-desc {
+      font-size: 11px;
+    }
+
+    .count-text {
+      min-width: 0;
+      padding: 2px 6px;
+      color: #59657a;
+      font-size: 11px;
+      line-height: 1.45;
+      text-align: center;
+      background: #f1f5fb;
+      border-radius: 999px;
+    }
+
+    .count-text.orange {
+      color: #b65b00;
+      background: #fff2dc;
+    }
+
+    .count-text.purple {
+      color: #6043d8;
+      background: #f1edff;
+    }
+
+    .row-meta {
+      gap: 5px;
+      margin-left: 2px;
+    }
+
+    .chevron {
+      width: 16px;
+      height: 16px;
+    }
+
+    .organize-button {
+      height: 34px;
+      margin-top: 8px;
+      border-radius: 9px;
+      font-size: 13px;
+      box-shadow: none;
+    }
+
+    .dashboard-link {
+      height: 24px;
+      margin-top: 4px;
+      font-size: 12px;
+    }
+
+    :focus-visible {
+      outline: 3px solid rgba(15, 115, 255, 0.28);
+      outline-offset: 2px;
+    }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>SiftMarks</h1>
-    <button class="lang-btn" id="langBtn">EN</button>
-  </div>
+  <svg class="icon-defs" aria-hidden="true">
+    <symbol id="icon-settings" viewBox="0 0 24 24">
+      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2.05 2.05 0 0 1-2.9 2.9l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2.05 2.05 0 0 1-4.1 0v-.09a1.7 1.7 0 0 0-1.02-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06a2.05 2.05 0 0 1-2.9-2.9l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2.05 2.05 0 0 1 0-4.1h.09A1.7 1.7 0 0 0 4.65 8.85a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2.05 2.05 0 0 1 2.9-2.9l.06.06a1.7 1.7 0 0 0 1.87.34h.01A1.7 1.7 0 0 0 10.1 2.5V2a2.05 2.05 0 0 1 4.1 0v.09a1.7 1.7 0 0 0 1.02 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06a2.05 2.05 0 0 1 2.9 2.9l-.06.06A1.7 1.7 0 0 0 19.66 8.1v.01A1.7 1.7 0 0 0 21.5 9.9h.5a2.05 2.05 0 0 1 0 4.1h-.09A1.7 1.7 0 0 0 19.4 15Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-arrow-left" viewBox="0 0 24 24">
+      <path d="M19 12H5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="m12 19-7-7 7-7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-bookmark" viewBox="0 0 24 24">
+      <path d="M6.5 4.75A2.25 2.25 0 0 1 8.75 2.5h6.5a2.25 2.25 0 0 1 2.25 2.25v16l-5.5-3.5-5.5 3.5v-16Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24">
+      <path d="M12 3v11" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M4.5 18.5v.75A2.25 2.25 0 0 0 6.75 21h10.5a2.25 2.25 0 0 0 2.25-2.25v-.75" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-tag" viewBox="0 0 24 24">
+      <path d="M20 12.6 12.6 20a2 2 0 0 1-2.83 0L3.5 13.73V4.5h9.23L20 11.27a2 2 0 0 1 0 2.83Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M7.75 8h.01" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-copy" viewBox="0 0 24 24">
+      <path d="M9 9.5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M5 14.5h-.5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-chevron" viewBox="0 0 24 24">
+      <path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24">
+      <path d="M20 12a8 8 0 0 1-14.2 5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M4 12a8 8 0 0 1 14.2-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M18 3v4h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M6 21v-4h4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-link" viewBox="0 0 24 24">
+      <path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M14 11a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+  </svg>
 
-  <div class="offline" id="offline">
-    <span id="offlineText">SiftMarks 服务未运行。请先启动：</span>
-    <code>npm run dev</code>
-  </div>
+  <main class="popup-shell">
+    <div id="statusMsg" class="toast" role="status" aria-live="polite"></div>
 
-  <div id="statusMsg" class="status-msg" style="display:none;"></div>
-
-  <div id="mainContent">
-    <!-- Stats -->
-    <div class="section">
-      <div class="stats" id="statsGrid">
-        <div class="stat-card"><div class="num" id="statBookmarks">-</div><div class="label" id="labelBookmarks">书签</div></div>
-        <div class="stat-card"><div class="num" id="statDuplicates">-</div><div class="label" id="labelDuplicates">重复</div></div>
-        <div class="stat-card"><div class="num" id="statTags">-</div><div class="label" id="labelTags">标签</div></div>
-      </div>
+    <div class="offline" id="offline">
+      本地 SiftMarks 服务未运行，请先启动：<code>npm run dev</code>
     </div>
 
-    <!-- Actions -->
-    <div class="section">
-      <div class="actions">
-        <button class="btn primary" id="btnImport">
-          <span class="icon">📥</span>
+    <div id="homeView" class="view">
+      <header class="app-header">
+        <div class="brand">
+          <img class="brand-mark" src="icons/icon48.png" alt="">
           <div>
-            <div class="text" id="importText">一键导入浏览器书签</div>
-            <div class="desc" id="importDesc">读取 Chrome 全部书签并导入 SiftMarks</div>
+            <h1 class="brand-title">
+              <span class="en">SiftMark</span>
+              <span class="zh">书签助手</span>
+            </h1>
+            <p class="subtitle">本地 AI 书签记忆库</p>
           </div>
+        </div>
+
+        <button id="settingsBtn" class="icon-button" type="button" title="设置" aria-label="设置">
+          <svg><use href="#icon-settings"></use></svg>
         </button>
-        <button class="btn" id="btnSaveTab">
-          <span class="icon">📌</span>
-          <div>
-            <div class="text" id="saveTabText">保存当前页面</div>
-            <div class="desc" id="saveTabDesc">将当前标签页添加到 SiftMarks</div>
-          </div>
-        </button>
-        <button class="btn" id="btnRescue">
-          <span class="icon">🔧</span>
-          <div>
-            <div class="text" id="rescueText">书签整理</div>
-            <div class="desc" id="rescueDesc">查找重复、失效链接，生成清理建议</div>
-          </div>
-        </button>
-        <button class="btn" id="btnSyncBack" style="border-color:#16a34a;">
-          <span class="icon">🔄</span>
-          <div>
-            <div class="text" id="syncBackText" style="color:#16a34a;">同步回 Chrome</div>
-            <div class="desc" id="syncBackDesc">将整理结果写回浏览器书签栏</div>
-          </div>
-        </button>
-      </div>
+      </header>
+
+      <section class="ai-card" id="aiCard" aria-labelledby="aiTitle">
+        <h2 id="aiTitle">配置 AI 服务</h2>
+        <p id="aiDesc">输入 API Key 以连接到 AI 服务。</p>
+        <button id="btnConfigureAI" class="primary-button" type="button">配置 API Key</button>
+      </section>
+
+      <section class="section-block" aria-labelledby="startTitle">
+        <h2 class="section-title" id="startTitle">开始使用</h2>
+        <div class="list-card">
+          <button class="menu-row" id="btnSaveTab" type="button">
+            <span class="tile-icon blue">
+              <svg><use href="#icon-bookmark"></use></svg>
+            </span>
+            <span class="row-copy">
+              <span class="row-title">保存当前页面</span>
+              <span class="row-desc" id="saveTabDesc">把当前网页加入知识库</span>
+            </span>
+            <span class="row-meta">
+              <svg class="chevron"><use href="#icon-chevron"></use></svg>
+            </span>
+          </button>
+
+          <button class="menu-row" id="btnImport" type="button">
+            <span class="tile-icon green">
+              <svg><use href="#icon-download"></use></svg>
+            </span>
+            <span class="row-copy">
+              <span class="row-title">导入浏览器书签</span>
+              <span class="row-desc" id="importDesc">读取并整理已有书签</span>
+            </span>
+            <span class="row-meta">
+              <svg class="chevron"><use href="#icon-chevron"></use></svg>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <section class="section-block" aria-labelledby="reviewTitle">
+        <h2 class="section-title" id="reviewTitle">待审查</h2>
+        <div class="list-card">
+          <button class="menu-row" id="btnCategoryReview" type="button">
+            <span class="tile-icon orange">
+              <svg><use href="#icon-tag"></use></svg>
+            </span>
+            <span class="row-copy">
+              <span class="row-title">整理建议</span>
+            </span>
+            <span class="row-meta">
+              <span class="count-text orange" id="categoryCount">-- 条待审查</span>
+              <svg class="chevron"><use href="#icon-chevron"></use></svg>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <section class="section-block" aria-labelledby="syncTitle">
+        <h2 class="section-title" id="syncTitle">浏览器同步</h2>
+        <div class="list-card">
+          <button class="menu-row" id="btnSyncBack" type="button">
+            <span class="tile-icon green">
+              <svg><use href="#icon-refresh"></use></svg>
+            </span>
+            <span class="row-copy">
+              <span class="row-title">安全写回 Chrome</span>
+              <span class="row-desc">只同步已接受的整理建议</span>
+            </span>
+            <span class="row-meta">
+              <span class="count-text" id="syncBackCount">-- 项待写回</span>
+              <svg class="chevron"><use href="#icon-chevron"></use></svg>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <button class="primary-button organize-button" id="btnRescue" type="button">
+        生成整理建议
+      </button>
+
+      <button class="dashboard-link" id="dashboardLink" type="button">
+        打开完整管理页
+      </button>
     </div>
 
-    <!-- Search -->
-    <div class="section">
-      <div class="search-box">
-        <input type="text" id="searchInput" placeholder="搜索书签..." />
-        <button id="searchBtn" onclick="doSearch()">搜索</button>
-      </div>
-      <div class="results" id="results"></div>
-    </div>
-  </div>
+    <div id="configView" class="view" hidden>
+      <header class="config-header">
+        <button id="backToHomeBtn" class="back-button" type="button" title="返回" aria-label="返回">
+          <svg><use href="#icon-arrow-left"></use></svg>
+        </button>
+        <div class="brand">
+          <img class="brand-mark" src="icons/icon48.png" alt="">
+          <div>
+            <h1 class="brand-title">
+              <span class="en">SiftMark</span>
+              <span class="zh">书签助手</span>
+            </h1>
+            <p class="subtitle">本地 AI 书签记忆库</p>
+          </div>
+        </div>
+        <span aria-hidden="true"></span>
+      </header>
 
-  <div class="footer">
-    <a href="http://localhost:4399" target="_blank" id="dashboardLink">打开 SiftMarks 面板</a>
-  </div>
+      <section class="config-card" aria-labelledby="configTitle">
+        <h2 id="configTitle">配置 AI 服务</h2>
+        <p class="config-subtitle">设置并连接你的 AI 服务</p>
+
+        <form id="aiConfigForm">
+          <div class="form-group">
+            <label class="form-label" for="providerSelect">服务商</label>
+            <div class="field-wrap">
+              <select id="providerSelect" class="form-control"></select>
+              <svg class="select-icon"><use href="#icon-chevron"></use></svg>
+            </div>
+          </div>
+
+          <div class="form-group" id="baseUrlGroup" hidden>
+            <label class="form-label" for="baseUrlInput">API 地址</label>
+            <input id="baseUrlInput" class="form-control" type="url" autocomplete="off" placeholder="https://api.example.com/v1" />
+          </div>
+
+          <div class="form-group" id="apiKeyGroup">
+            <label class="form-label" for="apiKeyInput">API Key</label>
+            <input id="apiKeyInput" class="form-control" type="password" autocomplete="off" placeholder="sk-xxxxxxxxxxxxxxxx" />
+            <p class="helper-text">Key 仅保存在本地设备，不会上传或存储到任何服务器。</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="modelSelect">模型</label>
+            <div class="field-wrap" id="modelSelectWrap">
+              <select id="modelSelect" class="form-control"></select>
+              <svg class="select-icon"><use href="#icon-chevron"></use></svg>
+            </div>
+            <input id="modelInput" class="form-control" type="text" autocomplete="off" placeholder="请输入模型名，例如 MiniMax-M3" hidden />
+          </div>
+
+          <button id="testConnectionBtn" class="outline-button" type="button">测试连接</button>
+          <button id="saveConfigBtn" class="primary-button config-save-button" type="submit">保存</button>
+        </form>
+      </section>
+    </div>
+
+    <div id="editView" class="view" hidden>
+      <header class="config-header">
+        <button id="backFromEditBtn" class="back-button" type="button" title="返回" aria-label="返回">
+          <svg><use href="#icon-arrow-left"></use></svg>
+        </button>
+        <div class="brand">
+          <img class="brand-mark" src="icons/icon48.png" alt="">
+          <div>
+            <h1 class="brand-title">
+              <span class="en">SiftMark</span>
+              <span class="zh">书签助手</span>
+            </h1>
+            <p class="subtitle">本地 AI 书签记忆库</p>
+          </div>
+        </div>
+        <button id="editSettingsBtn" class="icon-button" type="button" title="设置" aria-label="设置">
+          <svg><use href="#icon-settings"></use></svg>
+        </button>
+      </header>
+
+      <section class="edit-card" aria-labelledby="editTitle">
+        <h2 id="editTitle" class="edit-title">编辑书签</h2>
+        <p class="edit-subtitle">修改标题、链接、文件夹与标签</p>
+
+        <div class="bookmark-summary">
+          <div id="editFavicon" class="bookmark-favicon">AI</div>
+          <div class="bookmark-main">
+            <div id="editPreviewTitle" class="bookmark-title">OpenAI API Docs</div>
+            <div id="editPreviewUrl" class="bookmark-url">platform.openai.com/docs</div>
+          </div>
+          <div class="status-pill"><span class="status-dot"></span><span id="editStatusText">已保存</span></div>
+        </div>
+
+        <form id="editBookmarkForm" class="edit-form">
+          <div class="form-group">
+            <label class="form-label" for="editTitleInput">标题</label>
+            <input id="editTitleInput" class="form-control" type="text" autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="editUrlInput">URL</label>
+            <input id="editUrlInput" class="form-control" type="url" autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="editFolderSelect">所在文件夹</label>
+            <div class="field-wrap">
+              <select id="editFolderSelect" class="form-control"></select>
+              <svg class="select-icon"><use href="#icon-chevron"></use></svg>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="editTagInput">标签</label>
+            <div class="tag-box">
+              <div id="tagChipRow" class="tag-chip-row"></div>
+              <input id="editTagInput" class="tag-input" type="text" autocomplete="off" placeholder="添加标签..." />
+              <div class="common-label">常用标签</div>
+              <div id="commonTagRow" class="common-tags"></div>
+              <div class="ai-tag-hint">✧ 可基于网页内容重新生成标签</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="editSummaryInput">AI 摘要</label>
+            <textarea id="editSummaryInput" class="form-control summary-control"></textarea>
+          </div>
+
+          <div class="edit-action-row">
+            <button id="reanalyzeBtn" class="outline-button" type="button">
+              <svg class="chevron"><use href="#icon-refresh"></use></svg>
+              重新分析网页内容
+            </button>
+            <button id="checkLinkBtn" class="outline-button" type="button">
+              <svg class="chevron"><use href="#icon-link"></use></svg>
+              检测链接可用性
+            </button>
+          </div>
+
+          <div class="edit-footer">
+            <button id="deleteBookmarkBtn" class="danger-link" type="button">删除书签</button>
+            <button id="cancelEditBtn" class="secondary-button" type="button">取消</button>
+            <button id="saveBookmarkEditBtn" class="primary-button edit-save-button" type="submit">保存修改</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
 
   <script src="popup.js"></script>
 </body>

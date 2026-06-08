@@ -2,12 +2,21 @@ import { NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
 import { getAIProvider } from '@/lib/ai';
 import { generateTaxonomy, MockProviderNotAllowedError } from '@siftmarks/ai';
+import { DEFAULT_SETTINGS } from '@siftmarks/shared';
 
 const SETTING_KEY = 'bookmarkTaxonomy';
+
+function clampTopLevelFolderLimit(value: number): number {
+  return Number.isFinite(value)
+    ? Math.min(Math.max(Math.round(value), 3), 50)
+    : DEFAULT_SETTINGS.topLevelFolderLimit;
+}
 
 export async function POST() {
   const db = getDB();
   const provider = getAIProvider();
+  const folderDepth = db.getSetting('folderDepth') === '2' ? 2 : 1;
+  const topLevelFolderLimit = clampTopLevelFolderLimit(Number(db.getSetting('topLevelFolderLimit')));
 
   const { items: bookmarks } = db.listBookmarks({ limit: 100000 });
   const active = bookmarks.filter((b) => b.status !== 'deleted');
@@ -20,9 +29,9 @@ export async function POST() {
   }
 
   try {
-    const taxonomy = await generateTaxonomy(provider, active);
+    const taxonomy = await generateTaxonomy(provider, active, { folderDepth, topLevelFolderLimit });
     db.setSetting(SETTING_KEY, JSON.stringify(taxonomy));
-    return NextResponse.json({ taxonomy });
+    return NextResponse.json({ taxonomy, folderPolicy: { folderDepth, topLevelFolderLimit } });
   } catch (err) {
     if (err instanceof MockProviderNotAllowedError) {
       return NextResponse.json(

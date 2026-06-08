@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
-import type { BookmarkTaxonomy } from '@siftmarks/shared';
+import { isLowValueFolderPath, type BookmarkTaxonomy } from '@siftmarks/shared';
 
 const SETTING_KEY = 'bookmarkTaxonomy';
 
@@ -33,8 +33,9 @@ export async function PATCH(request: Request) {
         name: String(c.name).trim(),
         description: String(c.description ?? '').trim(),
         examples: Array.isArray(c.examples) ? c.examples.slice(0, 5).map(String) : [],
-      })),
-    fallback: taxonomy.fallback?.trim() || 'Other',
+      }))
+      .filter((c) => !isLowValueFolderPath(c.name)),
+    fallback: taxonomy.fallback?.trim() || '待人工确认',
     language: taxonomy.language ?? 'mixed',
     generatedAt: taxonomy.generatedAt ?? new Date().toISOString(),
     totalBookmarks: taxonomy.totalBookmarks ?? 0,

@@ -6,6 +6,7 @@
   "permissions": [
     "bookmarks",
     "activeTab",
+    "alarms",
     "storage"
   ],
   "host_permissions": [

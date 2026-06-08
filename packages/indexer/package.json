@@ -18,6 +18,7 @@
   "dependencies": {
     "@siftmarks/shared": "*",
     "@siftmarks/db": "*",
-    "@siftmarks/ai": "*"
+    "@siftmarks/ai": "*",
+    "@siftmarks/core": "*"
   }
 }

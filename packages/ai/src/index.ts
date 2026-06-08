@@ -1,5 +1,6 @@
 export {
   type AIProvider,
+  type AITagOptions,
   MockProvider,
   OpenAICompatibleProvider,
   OllamaCompatibleProvider,

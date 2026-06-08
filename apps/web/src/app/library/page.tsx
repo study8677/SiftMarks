@@ -59,6 +59,8 @@ export default function LibraryPage() {
   }, [filter, selectedFolder, selectedTag, page]);
 
   useEffect(() => {
+    // Existing app pages hydrate local API state from client effects.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchBookmarks();
   }, [fetchBookmarks]);
 

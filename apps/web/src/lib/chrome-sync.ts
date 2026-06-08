@@ -4,6 +4,8 @@ export interface ChromeOp {
   id: string;
   action: 'update' | 'remove' | 'move';
   chromeId: string;
+  bookmarkTitle?: string | null;
+  bookmarkUrl?: string;
   title?: string;
   url?: string;
   folderPath?: string;
@@ -36,17 +38,20 @@ export function getChromeSyncPlan(db: SiftMarksDB): ChromeSyncPlan {
             id: suggestion.id,
             action: 'update',
             chromeId: bookmark.chromeId,
+            bookmarkTitle: bookmark.title,
+            bookmarkUrl: bookmark.url,
             title: after.title,
           });
         }
         break;
 
-      case 'merge_duplicate':
       case 'delete_broken':
         opsByKey.set(`remove:${bookmark.chromeId}`, {
           id: suggestion.id,
           action: 'remove',
           chromeId: bookmark.chromeId,
+          bookmarkTitle: bookmark.title,
+          bookmarkUrl: bookmark.url,
         });
         break;
 
@@ -56,6 +61,8 @@ export function getChromeSyncPlan(db: SiftMarksDB): ChromeSyncPlan {
             id: suggestion.id,
             action: 'move',
             chromeId: bookmark.chromeId,
+            bookmarkTitle: bookmark.title,
+            bookmarkUrl: bookmark.url,
             folderPath: after.folderPath,
           });
         }

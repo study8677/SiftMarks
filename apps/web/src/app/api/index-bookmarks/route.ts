@@ -5,7 +5,13 @@ import { indexBookmarks } from '@siftmarks/indexer';
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const { limit = 100, onlyMissing = true, useAI = true } = body;
+  const {
+    limit = 100,
+    onlyMissing = true,
+    useAI = true,
+    fetchContent = true,
+    fetchTimeout = 10000,
+  } = body;
 
   const db = getDB();
   const provider = getAIProvider();
@@ -14,6 +20,8 @@ export async function POST(request: Request) {
     limit,
     onlyMissing,
     useAI,
+    fetchContent,
+    fetchTimeout,
   });
 
   return NextResponse.json(result);

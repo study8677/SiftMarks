@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDB } from '@/lib/db';
+import { normalizeTagKey } from '@/lib/tags';
 import type { BookmarkStatus } from '@siftmarks/shared';
 
 export async function GET(request: Request) {
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
   const result = db.listBookmarks({
     status: status ?? undefined,
     folder: folder ?? undefined,
-    tag: tag ?? undefined,
+    tag: tag ? normalizeTagKey(tag) : undefined,
     limit,
     offset,
     isDuplicate: isDuplicate === 'true' ? true : isDuplicate === 'false' ? false : undefined,

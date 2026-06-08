@@ -1,266 +1,882 @@
-// SiftMarks Chrome Extension - Popup Script
+// SiftMarks Chrome Extension - Popup Control Panel
 
-// --- i18n ---
-const i18n = {
-  zh: {
-    bookmarks: '书签',
-    duplicates: '重复',
-    tags: '标签',
-    importAll: '一键导入浏览器书签',
-    importDesc: '读取 Chrome 全部书签并导入 SiftMarks',
-    importing: '正在导入...',
-    saveTab: '保存当前页面',
-    saveTabDesc: '将当前标签页添加到 SiftMarks',
-    rescue: '书签整理',
-    rescueDesc: '查找重复、失效链接，生成清理建议',
-    syncBack: '同步回 Chrome',
-    syncBackDesc: '将整理结果写回浏览器书签栏',
-    syncing: '正在同步...',
-    searchPlaceholder: '搜索书签...',
-    searchBtn: '搜索',
-    searching: '搜索中...',
-    noResults: '未找到匹配书签',
-    dashboard: '打开 SiftMarks 面板',
-    offline: 'SiftMarks 服务未运行。请先启动：',
-    imported: (n) => `成功导入 ${n} 条书签！`,
-    importedDup: (n, d) => `导入 ${n} 条，${d} 条重复已跳过`,
-    saved: '已保存！',
-    alreadyExists: '该页面已收藏',
-    rescueDone: (n) => `生成了 ${n} 条整理建议`,
-    rescueHint: '请在面板中审查并接受建议，然后点击「同步回 Chrome」',
-    syncDone: (n) => `已同步 ${n} 条改动到 Chrome！`,
-    syncNone: '没有待同步的改动。请先在面板中接受整理建议。',
-    syncFailed: (a, f) => `同步完成：${a} 成功，${f} 失败`,
-    cleanupDone: (c) => `已整理书签栏：合并 ${c.duplicatesRemoved} 个重复，清理 ${c.emptyFoldersRemoved} 个空文件夹`,
-    error: '操作失败，请检查服务是否运行',
-    chromeCount: (n) => `Chrome 中共有 ${n} 条书签`,
-    langBtn: 'EN',
-    confirmSync: '确定要把已接受的整理建议同步到 Chrome 吗？\n\n这将：\n• 应用已接受的重命名 / 移动 / 删除\n• 顺手合并明显重复的 URL\n• 移除清理后留下的空文件夹\n\n如果 Chrome 开启同步，这些变化可能会同步到你的 Google 账号。',
+const API_BASE = 'http://localhost:4399';
+
+function applyBookmarkActionIcon() {
+  try {
+    const result = chrome.action?.setIcon?.({
+      path: {
+        16: 'icons/icon16.png',
+        48: 'icons/icon48.png',
+        128: 'icons/icon128.png',
+      },
+    });
+    if (result && typeof result.catch === 'function') result.catch(() => {});
+  } catch {
+    // Chrome may ignore icon refreshes until the unpacked extension is reloaded.
+  }
+}
+
+applyBookmarkActionIcon();
+
+const PROVIDERS = {
+  openai: {
+    label: 'OpenAI',
+    type: 'openai-compatible',
+    baseUrl: 'https://api.openai.com/v1',
+    embeddingModel: 'text-embedding-3-small',
+    models: ['gpt-4.1-mini', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4o'],
+    keyPlaceholder: 'sk-xxxxxxxxxxxxxxxx',
+    requiresApiKey: true,
   },
-  en: {
-    bookmarks: 'Bookmarks',
-    duplicates: 'Duplicates',
-    tags: 'Tags',
-    importAll: 'Import All Browser Bookmarks',
-    importDesc: 'Read all Chrome bookmarks and import to SiftMarks',
-    importing: 'Importing...',
-    saveTab: 'Save Current Page',
-    saveTabDesc: 'Add current tab to SiftMarks',
-    rescue: 'Bookmark Rescue',
-    rescueDesc: 'Find duplicates, broken links, generate suggestions',
-    syncBack: 'Sync Back to Chrome',
-    syncBackDesc: 'Apply cleanup results to your browser bookmarks',
-    syncing: 'Syncing...',
-    searchPlaceholder: 'Search bookmarks...',
-    searchBtn: 'Search',
-    searching: 'Searching...',
-    noResults: 'No matching bookmarks found',
-    dashboard: 'Open SiftMarks Dashboard',
-    offline: 'SiftMarks is not running. Start it first:',
-    imported: (n) => `Successfully imported ${n} bookmarks!`,
-    importedDup: (n, d) => `Imported ${n}, ${d} duplicates skipped`,
-    saved: 'Saved!',
-    alreadyExists: 'Already bookmarked',
-    rescueDone: (n) => `Generated ${n} cleanup suggestions`,
-    rescueHint: 'Review & accept suggestions in the dashboard, then click "Sync Back to Chrome"',
-    syncDone: (n) => `Synced ${n} changes to Chrome!`,
-    syncNone: 'No changes to sync. Accept suggestions in the dashboard first.',
-    syncFailed: (a, f) => `Sync done: ${a} applied, ${f} failed`,
-    cleanupDone: (c) => `Tidied bookmarks bar: merged ${c.duplicatesRemoved} duplicates, removed ${c.emptyFoldersRemoved} empty folders`,
-    error: 'Failed. Is SiftMarks running?',
-    chromeCount: (n) => `${n} bookmarks in Chrome`,
-    langBtn: '中文',
-    confirmSync: 'Sync accepted cleanup to Chrome?\n\nThis will:\n• Apply accepted rename / move / delete operations\n• Merge obvious duplicate URLs\n• Remove empty folders left behind\n\nIf Chrome Sync is enabled, these changes may sync to your Google account.',
+  minimax: {
+    label: 'MiniMax',
+    type: 'openai-compatible',
+    baseUrl: 'https://api.minimaxi.com/v1',
+    embeddingModel: 'embo-01',
+    models: ['MiniMax-M3', 'abab6.5s-chat'],
+    keyPlaceholder: '请输入 MiniMax API Key',
+    requiresApiKey: true,
+  },
+  qwen: {
+    label: '通义千问 / Qwen',
+    type: 'openai-compatible',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    embeddingModel: 'text-embedding-v4',
+    models: ['qwen-plus', 'qwen-max', 'qwen-turbo', 'qwen-long'],
+    keyPlaceholder: '请输入 DashScope API Key',
+    requiresApiKey: true,
+  },
+  deepseek: {
+    label: 'DeepSeek',
+    type: 'openai-compatible',
+    baseUrl: 'https://api.deepseek.com/v1',
+    embeddingModel: '',
+    models: ['deepseek-chat', 'deepseek-reasoner'],
+    keyPlaceholder: 'sk-xxxxxxxxxxxxxxxx',
+    requiresApiKey: true,
+  },
+  moonshot: {
+    label: 'Kimi / Moonshot',
+    type: 'openai-compatible',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    embeddingModel: '',
+    models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
+    keyPlaceholder: '请输入 Moonshot API Key',
+    requiresApiKey: true,
+  },
+  zhipu: {
+    label: '智谱 GLM',
+    type: 'openai-compatible',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    embeddingModel: 'embedding-3',
+    models: ['glm-4-flash', 'glm-4-plus', 'glm-4-air'],
+    keyPlaceholder: '请输入智谱 API Key',
+    requiresApiKey: true,
+  },
+  doubao: {
+    label: '豆包 / 火山方舟',
+    type: 'openai-compatible',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    embeddingModel: '',
+    models: ['doubao-1-5-lite-32k', 'doubao-1-5-pro-32k', 'doubao-seed-1-6'],
+    keyPlaceholder: '请输入火山方舟 API Key',
+    requiresApiKey: true,
+  },
+  siliconflow: {
+    label: 'SiliconFlow',
+    type: 'openai-compatible',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    embeddingModel: 'BAAI/bge-m3',
+    models: ['Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3', 'THUDM/glm-4-9b-chat'],
+    keyPlaceholder: 'sk-xxxxxxxxxxxxxxxx',
+    requiresApiKey: true,
+  },
+  openrouter: {
+    label: 'OpenRouter',
+    type: 'openai-compatible',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    embeddingModel: '',
+    models: ['openai/gpt-4o-mini', 'anthropic/claude-3.5-sonnet', 'google/gemini-flash-1.5'],
+    keyPlaceholder: 'sk-or-xxxxxxxxxxxxxxxx',
+    requiresApiKey: true,
+  },
+  groq: {
+    label: 'Groq',
+    type: 'openai-compatible',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    embeddingModel: '',
+    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
+    keyPlaceholder: 'gsk_xxxxxxxxxxxxxxxx',
+    requiresApiKey: true,
+  },
+  together: {
+    label: 'Together AI',
+    type: 'openai-compatible',
+    baseUrl: 'https://api.together.xyz/v1',
+    embeddingModel: 'BAAI/bge-base-en-v1.5',
+    models: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'Qwen/Qwen2.5-72B-Instruct-Turbo', 'deepseek-ai/DeepSeek-V3'],
+    keyPlaceholder: '请输入 Together API Key',
+    requiresApiKey: true,
+  },
+  lmstudio: {
+    label: 'LM Studio 本地服务',
+    type: 'openai-compatible',
+    baseUrl: 'http://localhost:1234/v1',
+    embeddingModel: '',
+    models: ['local-model', 'qwen2.5', 'llama-3.2'],
+    keyPlaceholder: '',
+    requiresApiKey: false,
+  },
+  ollama: {
+    label: 'Ollama',
+    type: 'ollama-compatible',
+    baseUrl: 'http://localhost:11434',
+    embeddingModel: 'nomic-embed-text',
+    models: ['llama3.2', 'qwen2.5', 'mistral'],
+    keyPlaceholder: '',
+    requiresApiKey: false,
+  },
+  custom: {
+    label: '自定义 OpenAI 兼容',
+    type: 'openai-compatible',
+    baseUrl: '',
+    embeddingModel: '',
+    models: ['gpt-4o-mini', 'qwen-plus', 'deepseek-chat', 'local-model'],
+    keyPlaceholder: '请输入兼容接口 API Key',
+    requiresApiKey: true,
+    editableBaseUrl: true,
   },
 };
 
-let lang = 'zh';
+const DEFAULT_FOLDERS = ['开发资源', 'AI 工具', '学习资料', '产品灵感'];
+const DEFAULT_COMMON_TAGS = ['MCP', 'AI 工具', '开发文档', '教程', 'SaaS', '产品灵感'];
+const DEMO_BOOKMARK = {
+  id: 'demo-bookmark',
+  title: 'OpenAI API Docs',
+  url: 'https://platform.openai.com/docs',
+  folderPath: '开发资源',
+  summary: 'OpenAI 官方 API 文档，包含模型调用、接口说明、鉴权方式与开发示例，适合开发者查阅与集成。',
+  tags: ['AI', 'API', '文档', '开发工具'],
+  status: 'saved',
+};
 
-function t(key) {
-  return i18n[lang][key] || key;
+const els = {
+  homeView: document.getElementById('homeView'),
+  configView: document.getElementById('configView'),
+  editView: document.getElementById('editView'),
+  offline: document.getElementById('offline'),
+  statusMsg: document.getElementById('statusMsg'),
+  aiCard: document.getElementById('aiCard'),
+  aiTitle: document.getElementById('aiTitle'),
+  aiDesc: document.getElementById('aiDesc'),
+  btnConfigureAI: document.getElementById('btnConfigureAI'),
+  btnSaveTab: document.getElementById('btnSaveTab'),
+  btnImport: document.getElementById('btnImport'),
+  btnCategoryReview: document.getElementById('btnCategoryReview'),
+  btnSyncBack: document.getElementById('btnSyncBack'),
+  btnRescue: document.getElementById('btnRescue'),
+  settingsBtn: document.getElementById('settingsBtn'),
+  dashboardLink: document.getElementById('dashboardLink'),
+  importDesc: document.getElementById('importDesc'),
+  saveTabDesc: document.getElementById('saveTabDesc'),
+  categoryCount: document.getElementById('categoryCount'),
+  syncBackCount: document.getElementById('syncBackCount'),
+  backToHomeBtn: document.getElementById('backToHomeBtn'),
+  aiConfigForm: document.getElementById('aiConfigForm'),
+  providerSelect: document.getElementById('providerSelect'),
+  baseUrlGroup: document.getElementById('baseUrlGroup'),
+  baseUrlInput: document.getElementById('baseUrlInput'),
+  apiKeyGroup: document.getElementById('apiKeyGroup'),
+  apiKeyInput: document.getElementById('apiKeyInput'),
+  modelSelect: document.getElementById('modelSelect'),
+  modelSelectWrap: document.getElementById('modelSelectWrap'),
+  modelInput: document.getElementById('modelInput'),
+  testConnectionBtn: document.getElementById('testConnectionBtn'),
+  saveConfigBtn: document.getElementById('saveConfigBtn'),
+  backFromEditBtn: document.getElementById('backFromEditBtn'),
+  editSettingsBtn: document.getElementById('editSettingsBtn'),
+  editBookmarkForm: document.getElementById('editBookmarkForm'),
+  editFavicon: document.getElementById('editFavicon'),
+  editPreviewTitle: document.getElementById('editPreviewTitle'),
+  editPreviewUrl: document.getElementById('editPreviewUrl'),
+  editStatusText: document.getElementById('editStatusText'),
+  editTitleInput: document.getElementById('editTitleInput'),
+  editUrlInput: document.getElementById('editUrlInput'),
+  editFolderSelect: document.getElementById('editFolderSelect'),
+  tagChipRow: document.getElementById('tagChipRow'),
+  editTagInput: document.getElementById('editTagInput'),
+  commonTagRow: document.getElementById('commonTagRow'),
+  editSummaryInput: document.getElementById('editSummaryInput'),
+  reanalyzeBtn: document.getElementById('reanalyzeBtn'),
+  checkLinkBtn: document.getElementById('checkLinkBtn'),
+  deleteBookmarkBtn: document.getElementById('deleteBookmarkBtn'),
+  cancelEditBtn: document.getElementById('cancelEditBtn'),
+  saveBookmarkEditBtn: document.getElementById('saveBookmarkEditBtn'),
+};
+
+let currentSettings = null;
+let currentView = 'home';
+let currentBookmark = null;
+let editTags = [];
+let knownFolders = [...DEFAULT_FOLDERS];
+let knownTags = [...DEFAULT_COMMON_TAGS];
+
+function hasChromeRuntime() {
+  return typeof chrome !== 'undefined' && Boolean(chrome.runtime?.sendMessage);
 }
 
-function updateUI() {
-  document.getElementById('labelBookmarks').textContent = t('bookmarks');
-  document.getElementById('labelDuplicates').textContent = t('duplicates');
-  document.getElementById('labelTags').textContent = t('tags');
-  document.getElementById('importText').textContent = t('importAll');
-  document.getElementById('importDesc').textContent = t('importDesc');
-  document.getElementById('saveTabText').textContent = t('saveTab');
-  document.getElementById('saveTabDesc').textContent = t('saveTabDesc');
-  document.getElementById('rescueText').textContent = t('rescue');
-  document.getElementById('rescueDesc').textContent = t('rescueDesc');
-  document.getElementById('syncBackText').textContent = t('syncBack');
-  document.getElementById('syncBackDesc').textContent = t('syncBackDesc');
-  document.getElementById('searchInput').placeholder = t('searchPlaceholder');
-  document.getElementById('searchBtn').textContent = t('searchBtn');
-  document.getElementById('dashboardLink').textContent = t('dashboard');
-  document.getElementById('offlineText').textContent = t('offline');
-  document.getElementById('langBtn').textContent = t('langBtn');
-}
+function sendMessage(message) {
+  if (!hasChromeRuntime()) {
+    if (message.action === 'saveTab') {
+      return Promise.resolve({ success: true, data: { ...DEMO_BOOKMARK, status: 'saved' } });
+    }
+    if (message.action === 'getBookmarks') {
+      return Promise.resolve({ success: true, data: { count: 1, bookmarks: [DEMO_BOOKMARK] } });
+    }
+    return Promise.resolve({ success: false, error: 'Chrome runtime unavailable' });
+  }
 
-function showStatus(msg, type = 'success') {
-  const el = document.getElementById('statusMsg');
-  el.textContent = msg;
-  el.className = `status-msg ${type}`;
-  el.style.display = 'block';
-  setTimeout(() => { el.style.display = 'none'; }, 4000);
-}
-
-function sendMessage(msg) {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage(msg, resolve);
+    chrome.runtime.sendMessage(message, resolve);
   });
 }
 
-// --- Load stats ---
-async function loadStats() {
-  const res = await sendMessage({ action: 'getStats' });
-  if (res.success) {
-    document.getElementById('statBookmarks').textContent = res.data.bookmarks.toLocaleString();
-    document.getElementById('statDuplicates').textContent = res.data.duplicates.toLocaleString();
-    document.getElementById('statTags').textContent = res.data.tags.toLocaleString();
-    document.getElementById('offline').style.display = 'none';
+async function api(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers ?? {}),
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+function openPage(path = '/') {
+  const url = `${API_BASE}${path}`;
+  if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+    chrome.tabs.create({ url });
   } else {
-    document.getElementById('offline').style.display = 'block';
+    window.open(url, '_blank');
   }
 }
 
-// --- Import all ---
-document.getElementById('btnImport').addEventListener('click', async () => {
-  const btn = document.getElementById('btnImport');
-  const textEl = document.getElementById('importText');
-  const origText = textEl.textContent;
+function showStatus(message, type = 'success') {
+  els.statusMsg.textContent = message;
+  els.statusMsg.className = `toast ${type === 'error' ? 'error' : type === 'info' ? 'info' : ''}`.trim();
+  els.statusMsg.style.display = 'block';
+  clearTimeout(showStatus.timer);
+  showStatus.timer = setTimeout(() => {
+    els.statusMsg.style.display = 'none';
+  }, 3000);
+}
 
-  btn.disabled = true;
-  textEl.textContent = t('importing');
+function setOffline(isOffline) {
+  els.offline.style.display = isOffline ? 'block' : 'none';
+}
 
-  const countRes = await sendMessage({ action: 'getBookmarks' });
-  if (countRes.success) {
-    document.getElementById('importDesc').textContent = t('chromeCount')(countRes.data.count);
+function setBusy(button, busy, busyText) {
+  if (!button) return () => {};
+
+  const title = button.querySelector('.row-title');
+  const previousTitle = title?.textContent;
+  const previousLabel = button.textContent;
+
+  button.disabled = busy;
+  if (busyText) {
+    if (title) title.textContent = busyText;
+    else button.textContent = busyText;
   }
 
-  const res = await sendMessage({ action: 'importAll' });
-
-  btn.disabled = false;
-  textEl.textContent = origText;
-
-  if (res.success) {
-    const d = res.data;
-    if (d.duplicates > 0) {
-      showStatus(t('importedDup')(d.imported, d.duplicates));
-    } else {
-      showStatus(t('imported')(d.imported));
+  return () => {
+    button.disabled = false;
+    if (busyText) {
+      if (title && previousTitle) title.textContent = previousTitle;
+      else button.textContent = previousLabel;
     }
-    loadStats();
+  };
+}
+
+function countLabel(count, emptyText, suffix) {
+  if (!Number.isFinite(count)) return `-- ${suffix}`;
+  if (count <= 0) return emptyText;
+  return `${count.toLocaleString()} ${suffix}`;
+}
+
+function providerKeyFromSettings(settings) {
+  const provider = settings?.aiProvider;
+  if (!provider || provider.type === 'mock') return 'openai';
+  if (provider.type === 'ollama-compatible') return 'ollama';
+  const baseUrl = (provider.baseUrl ?? '').replace(/\/$/, '');
+  const matched = Object.entries(PROVIDERS).find(([, preset]) => {
+    if (preset.id === 'custom' || preset.editableBaseUrl) return false;
+    return preset.type === provider.type && preset.baseUrl.replace(/\/$/, '') === baseUrl;
+  });
+  return matched?.[0] ?? 'custom';
+}
+
+function isAIConfigured(settings) {
+  const provider = settings?.aiProvider;
+  if (!provider || provider.type === 'mock') return false;
+  if (provider.type === 'ollama-compatible') return true;
+  return Boolean(provider.apiKey);
+}
+
+function providerName(settings) {
+  const key = providerKeyFromSettings(settings);
+  return PROVIDERS[key]?.label ?? 'OpenAI';
+}
+
+function populateProviderSelect() {
+  els.providerSelect.innerHTML = Object.entries(PROVIDERS)
+    .map(([key, provider]) => `<option value="${key}">${provider.label}</option>`)
+    .join('');
+}
+
+function updateAI(settings) {
+  const configured = isAIConfigured(settings);
+  els.aiCard.classList.toggle('configured', configured);
+
+  if (configured) {
+    els.aiTitle.textContent = 'AI 服务已配置';
+    els.aiDesc.textContent = `当前使用 ${providerName(settings)}，可生成摘要、标签与分类建议。`;
+    els.btnConfigureAI.textContent = '打开设置';
   } else {
-    showStatus(t('error'), 'error');
+    els.aiTitle.textContent = '配置 AI 服务';
+    els.aiDesc.textContent = '输入 API Key 以连接到 AI 服务。';
+    els.btnConfigureAI.textContent = '配置 API Key';
   }
-});
+}
 
-// --- Save current tab ---
-document.getElementById('btnSaveTab').addEventListener('click', async () => {
-  const res = await sendMessage({ action: 'saveTab' });
-  if (res.success) {
-    if (res.data.status === 'already_exists') {
-      showStatus(t('alreadyExists'));
-    } else {
-      showStatus(t('saved'));
-    }
-    loadStats();
-  } else {
-    showStatus(t('error'), 'error');
-  }
-});
+function setView(view) {
+  currentView = view;
+  els.homeView.hidden = view !== 'home';
+  els.configView.hidden = view !== 'config';
+  els.editView.hidden = view !== 'edit';
+}
 
-// --- Rescue ---
-document.getElementById('btnRescue').addEventListener('click', async () => {
-  const btn = document.getElementById('btnRescue');
-  btn.disabled = true;
+function populateModels(providerKey, selectedModel) {
+  const provider = PROVIDERS[providerKey] ?? PROVIDERS.openai;
+  const selected = selectedModel || provider.models[0];
+  const isCustom = Boolean(provider.editableBaseUrl);
 
-  try {
-    const response = await fetch('http://localhost:4399/api/rescue', { method: 'POST' });
-    const data = await response.json();
-    showStatus(t('rescueDone')(data.suggestionsCount));
-    // Show hint about next step
-    setTimeout(() => showStatus(t('rescueHint'), 'success'), 4500);
-  } catch {
-    showStatus(t('error'), 'error');
-  }
+  els.modelSelectWrap.hidden = isCustom;
+  els.modelInput.hidden = !isCustom;
 
-  btn.disabled = false;
-});
-
-// --- Sync back to Chrome ---
-document.getElementById('btnSyncBack').addEventListener('click', async () => {
-  // Confirm before modifying Chrome bookmarks
-  if (!confirm(t('confirmSync'))) return;
-
-  const btn = document.getElementById('btnSyncBack');
-  const textEl = document.getElementById('syncBackText');
-  const origText = textEl.textContent;
-
-  btn.disabled = true;
-  textEl.textContent = t('syncing');
-
-  const res = await sendMessage({ action: 'syncBack' });
-
-  btn.disabled = false;
-  textEl.textContent = origText;
-
-  if (res.success) {
-    const d = res.data;
-    const hasCleanup = d.cleanup && (
-      d.cleanup.duplicatesRemoved > 0
-      || d.cleanup.emptyFoldersRemoved > 0
-    );
-    if (d.total === 0 && !hasCleanup) {
-      showStatus(t('syncNone'));
-    } else if (d.total === 0 && hasCleanup) {
-      showStatus(t('cleanupDone')(d.cleanup));
-    } else if (d.failed > 0) {
-      showStatus(t('syncFailed')(d.applied, d.failed), 'error');
-    } else {
-      const cleaned = d.cleanup
-        ? ` ${t('cleanupDone')(d.cleanup)}`
-        : '';
-      showStatus(`${t('syncDone')(d.applied)}${cleaned}`);
-    }
-    loadStats();
-  } else {
-    showStatus(t('error'), 'error');
-  }
-});
-
-// --- Search ---
-async function doSearch() {
-  const query = document.getElementById('searchInput').value.trim();
-  if (!query) return;
-
-  const resultsEl = document.getElementById('results');
-  resultsEl.innerHTML = `<div class="empty">${t('searching')}</div>`;
-
-  const res = await sendMessage({ action: 'search', query });
-
-  if (!res.success || !res.data.results?.length) {
-    resultsEl.innerHTML = `<div class="empty">${t('noResults')}</div>`;
+  if (isCustom) {
+    els.modelInput.value = selectedModel || provider.models[0] || '';
     return;
   }
 
-  resultsEl.innerHTML = res.data.results.map((r) => `
-    <div class="result-item">
-      <a href="${escapeHtml(r.bookmark.url)}" target="_blank">${escapeHtml(r.bookmark.title || r.bookmark.url)}</a>
-      <div class="url">${escapeHtml(r.bookmark.url)}</div>
-      ${r.tags.length ? `<div class="tags">${r.tags.map((t) => `<span class="tag">#${escapeHtml(t)}</span>`).join('')}</div>` : ''}
-    </div>
+  els.modelSelect.innerHTML = provider.models
+    .map((model) => `<option value="${model}">${model}</option>`)
+    .join('');
+
+  if (!provider.models.includes(selected)) {
+    const option = document.createElement('option');
+    option.value = selected;
+    option.textContent = selected;
+    els.modelSelect.prepend(option);
+  }
+
+  els.modelSelect.value = selected;
+  els.modelInput.value = '';
+}
+
+function currentChatModel(provider) {
+  return provider.editableBaseUrl
+    ? els.modelInput.value.trim()
+    : (els.modelSelect.value || provider.models[0]);
+}
+
+function updateProviderFields() {
+  const providerKey = els.providerSelect.value;
+  const provider = PROVIDERS[providerKey] ?? PROVIDERS.openai;
+  const storedProviderKey = providerKeyFromSettings(currentSettings);
+  const hasStoredKey = storedProviderKey === providerKey && Boolean(currentSettings?.aiProvider?.apiKey);
+  const shouldShowBaseUrl = Boolean(provider.editableBaseUrl);
+
+  els.baseUrlGroup.hidden = !shouldShowBaseUrl;
+  els.baseUrlInput.value = shouldShowBaseUrl
+    ? currentSettings?.aiProvider?.baseUrl ?? provider.baseUrl
+    : provider.baseUrl;
+
+  els.apiKeyGroup.hidden = provider.requiresApiKey === false;
+  els.apiKeyInput.placeholder = hasStoredKey
+    ? '已配置，留空则继续使用'
+    : provider.keyPlaceholder;
+
+  const currentModel = currentSettings?.aiProvider?.chatModel;
+  const shouldKeepCurrentModel = storedProviderKey === providerKey;
+  populateModels(providerKey, shouldKeepCurrentModel ? currentModel : provider.models[0]);
+}
+
+function applySettingsToForm(settings) {
+  const providerKey = providerKeyFromSettings(settings);
+  els.providerSelect.value = providerKey;
+  els.apiKeyInput.value = '';
+  els.baseUrlInput.value = settings?.aiProvider?.baseUrl ?? PROVIDERS[providerKey]?.baseUrl ?? '';
+  updateProviderFields();
+}
+
+function showConfigView() {
+  applySettingsToForm(currentSettings);
+  setView('config');
+}
+
+function showHomeView() {
+  setView('home');
+  loadPanelState();
+}
+
+function getFormProviderConfig() {
+  const providerKey = els.providerSelect.value;
+  const provider = PROVIDERS[providerKey] ?? PROVIDERS.openai;
+  const apiKey = els.apiKeyInput.value.trim();
+  const baseUrl = provider.editableBaseUrl ? els.baseUrlInput.value.trim() : provider.baseUrl;
+  const storedProviderKey = providerKeyFromSettings(currentSettings);
+  const hasReusableStoredKey = storedProviderKey === providerKey && Boolean(currentSettings?.aiProvider?.apiKey);
+
+  if (!baseUrl) {
+    throw new Error('请输入 API 地址');
+  }
+
+  if (provider.requiresApiKey !== false && !apiKey && !hasReusableStoredKey) {
+    throw new Error('请输入 API Key');
+  }
+
+  const aiProvider = {
+    type: provider.type,
+    baseUrl,
+    chatModel: currentChatModel(provider),
+    embeddingModel: provider.embeddingModel || undefined,
+  };
+
+  if (!aiProvider.chatModel) {
+    throw new Error('请输入模型名');
+  }
+
+  if (apiKey && provider.requiresApiKey !== false) {
+    aiProvider.apiKey = apiKey;
+  }
+
+  return aiProvider;
+}
+
+function displayUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.hostname}${parsed.pathname === '/' ? '' : parsed.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+function normalizeBookmarkTags(tags) {
+  return (tags ?? [])
+    .map((tag) => typeof tag === 'string' ? tag : tag?.name)
+    .filter(Boolean);
+}
+
+function dedupeNames(names) {
+  const seen = new Set();
+  const out = [];
+  for (const name of names.map((n) => String(n ?? '').trim()).filter(Boolean)) {
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
+async function loadFoldersAndTags() {
+  try {
+    const [foldersRes, tagsRes] = await Promise.all([
+      api('/api/folders'),
+      api('/api/tags'),
+    ]);
+    knownFolders = dedupeNames([
+      ...DEFAULT_FOLDERS,
+      ...(foldersRes.folders ?? []).map((folder) => folder.path ?? folder.name),
+    ]);
+    knownTags = dedupeNames([
+      ...DEFAULT_COMMON_TAGS,
+      ...(tagsRes.tags ?? []).map((tag) => tag.name),
+    ]);
+  } catch {
+    knownFolders = [...DEFAULT_FOLDERS];
+    knownTags = [...DEFAULT_COMMON_TAGS];
+  }
+}
+
+function populateFolderSelect(selectedFolder) {
+  const folders = dedupeNames([selectedFolder, ...knownFolders].filter(Boolean));
+  els.editFolderSelect.innerHTML = [
+    '<option value="">未分类</option>',
+    ...folders.map((folder) => `<option value="${escapeHtml(folder)}">${escapeHtml(folder)}</option>`),
+  ].join('');
+  els.editFolderSelect.value = selectedFolder ?? '';
+}
+
+function renderTagChips() {
+  els.tagChipRow.innerHTML = editTags.map((tag) => `
+    <span class="tag-chip">
+      ${escapeHtml(tag)}
+      <button type="button" data-remove-tag="${escapeHtml(tag)}" aria-label="移除 ${escapeHtml(tag)}">×</button>
+    </span>
+  `).join('');
+
+  const common = dedupeNames(knownTags)
+    .filter((tag) => !editTags.some((current) => current.toLowerCase() === tag.toLowerCase()))
+    .slice(0, 4);
+  els.commonTagRow.innerHTML = common.map((tag) => `
+    <button class="common-tag" type="button" data-add-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
   `).join('');
 }
 
-document.getElementById('searchInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') doSearch();
-});
+function addEditTag(rawTag) {
+  const tag = String(rawTag ?? '').trim();
+  if (!tag) return;
+  editTags = dedupeNames([...editTags, tag]);
+  renderTagChips();
+}
 
-window.doSearch = doSearch;
+function removeEditTag(tag) {
+  editTags = editTags.filter((current) => current.toLowerCase() !== tag.toLowerCase());
+  renderTagChips();
+}
+
+function updateEditPreview() {
+  const title = els.editTitleInput.value.trim() || '未命名书签';
+  const url = els.editUrlInput.value.trim();
+  els.editPreviewTitle.textContent = title;
+  els.editPreviewUrl.textContent = displayUrl(url);
+  els.editFavicon.textContent = title.slice(0, 2).toUpperCase();
+}
+
+async function fetchBookmarkForEdit(id, fallback = null) {
+  if (!id || id === DEMO_BOOKMARK.id) return { ...DEMO_BOOKMARK };
+  try {
+    return await api(`/api/bookmarks/${encodeURIComponent(id)}`);
+  } catch {
+    return fallback ?? { ...DEMO_BOOKMARK };
+  }
+}
+
+async function showEditBookmark(bookmark) {
+  currentBookmark = bookmark;
+  await loadFoldersAndTags();
+
+  const tags = normalizeBookmarkTags(bookmark.tags);
+  editTags = tags.length ? tags : [];
+
+  els.editTitleInput.value = bookmark.title ?? '';
+  els.editUrlInput.value = bookmark.url ?? '';
+  els.editSummaryInput.value = bookmark.summary ?? '';
+  els.editStatusText.textContent = bookmark.status === 'already_exists' ? '已存在' : '已保存';
+  populateFolderSelect(bookmark.folderPath ?? '');
+  renderTagChips();
+  updateEditPreview();
+  setView('edit');
+}
+
+async function loadPanelState() {
+  try {
+    const [
+      settings,
+      pendingSuggestions,
+      syncPlan,
+    ] = await Promise.all([
+      api('/api/settings'),
+      api('/api/suggestions?status=pending&limit=1'),
+      api('/api/extension/sync-back'),
+    ]);
+
+    currentSettings = settings;
+    setOffline(false);
+    updateAI(settings);
+
+    if (currentView === 'config') {
+      applySettingsToForm(settings);
+    }
+
+    const pendingTotal = Number(pendingSuggestions.total ?? 0);
+
+    els.categoryCount.textContent = countLabel(pendingTotal, '暂无待审查', '条待审查');
+    els.syncBackCount.textContent = countLabel(
+      Number(syncPlan.count ?? 0),
+      '暂无待写回',
+      '项待写回'
+    );
+  } catch {
+    setOffline(true);
+    currentSettings = null;
+    updateAI(null);
+    els.categoryCount.textContent = '-- 条待审查';
+    els.syncBackCount.textContent = '-- 项待写回';
+  }
+}
+
+async function saveCurrentPage() {
+  const restore = setBusy(els.btnSaveTab, true, '正在保存...');
+  try {
+    const result = await sendMessage({ action: 'saveTab' });
+    if (!result?.success) throw new Error(result?.error || 'Save failed');
+
+    const bookmark = result.data?.bookmark ?? await fetchBookmarkForEdit(result.data?.id, {
+      ...DEMO_BOOKMARK,
+      ...result.data,
+      title: result.data?.title ?? DEMO_BOOKMARK.title,
+      url: result.data?.url ?? DEMO_BOOKMARK.url,
+    });
+
+    if (result.data?.chromeCreated) {
+      showStatus(`已保存，并加入 Chrome「${result.data.bookmark?.folderPath ?? '书签栏'}」`);
+    } else if (result.data?.chromeSkippedReason === 'needs_folder') {
+      showStatus('已保存到本地；AI 暂未归类，先不写入 Chrome', 'info');
+    } else {
+      showStatus(result.data?.status === 'already_exists' ? '该页面已在知识库中' : '已保存当前页面');
+    }
+    await showEditBookmark(bookmark);
+    loadPanelState();
+  } catch (err) {
+    showStatus(err instanceof Error ? err.message : '保存失败，请检查本地服务是否运行', 'error');
+  } finally {
+    restore();
+  }
+}
+
+async function importBrowserBookmarks() {
+  const restore = setBusy(els.btnImport, true, '正在导入...');
+  const previousDesc = els.importDesc.textContent;
+
+  try {
+    const countResult = await sendMessage({ action: 'getBookmarks' });
+    if (countResult?.success) {
+      els.importDesc.textContent = `Chrome 中共有 ${countResult.data.count.toLocaleString()} 条书签`;
+    }
+
+    const result = await sendMessage({ action: 'importAll' });
+    if (!result?.success) throw new Error(result?.error || 'Import failed');
+
+    const imported = Number(result.data?.imported ?? 0);
+    const duplicates = Number(result.data?.duplicates ?? 0);
+    if (duplicates > 0) {
+      showStatus(`导入 ${imported.toLocaleString()} 条，${duplicates.toLocaleString()} 条已存在链接已跳过`);
+    } else {
+      showStatus(`成功导入 ${imported.toLocaleString()} 条书签`);
+    }
+    await loadPanelState();
+  } catch {
+    showStatus('导入失败，请检查本地服务是否运行', 'error');
+  } finally {
+    els.importDesc.textContent = previousDesc;
+    restore();
+  }
+}
+
+async function runRescue() {
+  const restore = setBusy(els.btnRescue, true, '正在生成...');
+  try {
+    const result = await api('/api/rescue', {
+      method: 'POST',
+      body: JSON.stringify({ deep: true, analysisLimit: 20 }),
+    });
+    const total = Number(result.suggestionsCount ?? 0);
+    if (total > 0) {
+      showStatus(`已生成 ${total.toLocaleString()} 条整理建议`);
+    } else {
+      showStatus('暂时没有新的整理建议');
+    }
+    await loadPanelState();
+  } catch {
+    showStatus('整理失败，请检查服务或 AI 配置', 'error');
+  } finally {
+    restore();
+  }
+}
+
+async function syncBackToBrowser() {
+  const restore = setBusy(els.btnSyncBack, true, '正在写回...');
+  try {
+    const result = await sendMessage({ action: 'syncBack' });
+    if (!result?.success) throw new Error(result?.error || 'Sync failed');
+
+    const data = result.data ?? {};
+    const total = Number(data.total ?? 0);
+    const applied = Number(data.applied ?? 0);
+    const failed = Number(data.failed ?? 0);
+
+    if (total === 0) {
+      showStatus('暂无需要写回 Chrome 的改动', 'info');
+    } else if (failed > 0) {
+      showStatus(`已写回 ${applied} 项，${failed} 项失败`, 'error');
+    } else {
+      showStatus(`已安全写回 Chrome：${applied} 项`);
+    }
+
+    await loadPanelState();
+  } catch {
+    showStatus('写回失败，请确认插件权限和本地服务', 'error');
+  } finally {
+    restore();
+  }
+}
+
+async function previewSyncBackCount() {
+  try {
+    const syncPlan = await api('/api/extension/sync-back');
+    els.syncBackCount.textContent = countLabel(
+      Number(syncPlan.count ?? 0),
+      '暂无待写回',
+      '项待写回'
+    );
+  } catch {
+    els.syncBackCount.textContent = '-- 项待写回';
+  }
+}
+
+async function testConnection() {
+  const restore = setBusy(els.testConnectionBtn, true, '测试中...');
+  try {
+    const aiProvider = getFormProviderConfig();
+    await api('/api/settings/test-ai', {
+      method: 'POST',
+      body: JSON.stringify({ aiProvider }),
+    });
+    showStatus('AI 服务连接成功', 'info');
+  } catch (err) {
+    const message = err instanceof Error && ['请输入 API Key', '请输入 API 地址', '请输入模型名'].includes(err.message)
+      ? err.message
+      : '连接失败，请检查 API Key、模型或服务地址';
+    showStatus(message, 'error');
+  } finally {
+    restore();
+  }
+}
+
+async function saveAIConfig(event) {
+  event.preventDefault();
+  const restore = setBusy(els.saveConfigBtn, true, '保存中...');
+  try {
+    const aiProvider = getFormProviderConfig();
+    await api('/api/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ aiProvider }),
+    });
+    els.apiKeyInput.value = '';
+    showStatus('AI 服务配置已保存');
+    await loadPanelState();
+    setTimeout(() => setView('home'), 600);
+  } catch (err) {
+    const message = err instanceof Error && ['请输入 API Key', '请输入 API 地址', '请输入模型名'].includes(err.message)
+      ? err.message
+      : '保存失败，请检查本地服务是否运行';
+    showStatus(message, 'error');
+  } finally {
+    restore();
+  }
+}
+
+async function saveBookmarkEdit(event) {
+  event.preventDefault();
+  if (!currentBookmark) return;
+
+  const restore = setBusy(els.saveBookmarkEditBtn, true, '保存中...');
+  try {
+    const title = els.editTitleInput.value.trim();
+    const url = els.editUrlInput.value.trim();
+    if (!title) throw new Error('请输入标题');
+    new URL(url);
+
+    const payload = {
+      title,
+      url,
+      folderPath: els.editFolderSelect.value || null,
+      summary: els.editSummaryInput.value.trim() || null,
+      tags: editTags,
+    };
+
+    if (currentBookmark.id !== DEMO_BOOKMARK.id) {
+      await api(`/api/bookmarks/${encodeURIComponent(currentBookmark.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+    }
+
+    currentBookmark = { ...currentBookmark, ...payload };
+    updateEditPreview();
+    showStatus('书签修改已保存');
+    loadPanelState();
+  } catch (err) {
+    const message = err instanceof TypeError
+      ? '请输入有效 URL'
+      : err instanceof Error ? err.message : '保存失败';
+    showStatus(message, 'error');
+  } finally {
+    restore();
+  }
+}
+
+async function deleteBookmark() {
+  if (!currentBookmark) return;
+  if (!confirm('确定要删除这个书签吗？')) return;
+
+  try {
+    if (currentBookmark.id !== DEMO_BOOKMARK.id) {
+      await api(`/api/bookmarks/${encodeURIComponent(currentBookmark.id)}`, { method: 'DELETE' });
+    }
+    showStatus('书签已删除');
+    showHomeView();
+  } catch {
+    showStatus('删除失败，请检查本地服务', 'error');
+  }
+}
+
+async function reanalyzeBookmark() {
+  const restore = setBusy(els.reanalyzeBtn, true, '分析中...');
+  try {
+    if (currentBookmark?.id !== DEMO_BOOKMARK.id) {
+      const result = await api(`/api/bookmarks/${encodeURIComponent(currentBookmark.id)}/reanalyze`, {
+        method: 'POST',
+      });
+      if (result.bookmark) await showEditBookmark(result.bookmark);
+    } else {
+      els.editSummaryInput.value = DEMO_BOOKMARK.summary;
+    }
+    showStatus('已重新分析网页内容', 'info');
+  } catch {
+    showStatus('分析失败，请检查 AI 配置', 'error');
+  } finally {
+    restore();
+  }
+}
+
+async function checkLinkAvailability() {
+  try {
+    const parsed = new URL(els.editUrlInput.value.trim());
+    if (currentBookmark?.id !== DEMO_BOOKMARK.id) {
+      if (els.editUrlInput.value.trim() !== currentBookmark.url) {
+        showStatus('请先保存修改后的 URL', 'info');
+        return;
+      }
+      const result = await api(`/api/bookmarks/${encodeURIComponent(currentBookmark.id)}/check-link`, {
+        method: 'POST',
+      });
+      const label = result.ok ? '可访问' : '可能不可用';
+      showStatus(`${parsed.hostname} ${label}${result.httpStatus ? ` (${result.httpStatus})` : ''}`, result.ok ? 'info' : 'error');
+      return;
+    }
+    showStatus(`${parsed.hostname} 链接格式有效`, 'info');
+  } catch {
+    showStatus('请输入有效 URL', 'error');
+  }
+}
 
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -268,16 +884,43 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// --- Language toggle ---
-document.getElementById('langBtn').addEventListener('click', () => {
-  lang = lang === 'zh' ? 'en' : 'zh';
-  chrome.storage.local.set({ lang });
-  updateUI();
+populateProviderSelect();
+
+els.btnConfigureAI.addEventListener('click', showConfigView);
+els.settingsBtn.addEventListener('click', showConfigView);
+els.backToHomeBtn.addEventListener('click', showHomeView);
+els.providerSelect.addEventListener('change', updateProviderFields);
+els.testConnectionBtn.addEventListener('click', testConnection);
+els.aiConfigForm.addEventListener('submit', saveAIConfig);
+els.dashboardLink.addEventListener('click', () => openPage('/'));
+els.btnCategoryReview.addEventListener('click', () => openPage('/rescue'));
+els.btnSyncBack.addEventListener('click', syncBackToBrowser);
+els.btnSaveTab.addEventListener('click', saveCurrentPage);
+els.btnImport.addEventListener('click', importBrowserBookmarks);
+els.btnRescue.addEventListener('click', runRescue);
+els.backFromEditBtn.addEventListener('click', showHomeView);
+els.editSettingsBtn.addEventListener('click', showConfigView);
+els.editBookmarkForm.addEventListener('submit', saveBookmarkEdit);
+els.cancelEditBtn.addEventListener('click', showHomeView);
+els.deleteBookmarkBtn.addEventListener('click', deleteBookmark);
+els.reanalyzeBtn.addEventListener('click', reanalyzeBookmark);
+els.checkLinkBtn.addEventListener('click', checkLinkAvailability);
+els.editTitleInput.addEventListener('input', updateEditPreview);
+els.editUrlInput.addEventListener('input', updateEditPreview);
+els.editTagInput.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ',') return;
+  event.preventDefault();
+  addEditTag(els.editTagInput.value);
+  els.editTagInput.value = '';
+});
+els.tagChipRow.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-remove-tag]');
+  if (button) removeEditTag(button.dataset.removeTag);
+});
+els.commonTagRow.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-add-tag]');
+  if (button) addEditTag(button.dataset.addTag);
 });
 
-// --- Init ---
-chrome.storage.local.get('lang', (data) => {
-  if (data.lang) lang = data.lang;
-  updateUI();
-  loadStats();
-});
+loadPanelState();
+previewSyncBackCount();

@@ -1,6 +1,56 @@
 // SiftMarks Chrome Extension - Background Service Worker
 
 const API_BASE = 'http://localhost:4399';
+const DAILY_SCAN_ALARM = 'siftmarks-daily-scan';
+const DAILY_SCAN_HOUR = 8;
+
+function applyBookmarkActionIcon() {
+  try {
+    const result = chrome.action?.setIcon?.({
+      path: {
+        16: 'icons/icon16.png',
+        48: 'icons/icon48.png',
+        128: 'icons/icon128.png',
+      },
+    });
+    if (result && typeof result.catch === 'function') result.catch(() => {});
+  } catch {
+    // Chrome may ignore icon refreshes until the unpacked extension is reloaded.
+  }
+}
+
+applyBookmarkActionIcon();
+
+function nextDailyScanTime() {
+  const next = new Date();
+  next.setHours(DAILY_SCAN_HOUR, 0, 0, 0);
+  if (next.getTime() <= Date.now()) {
+    next.setDate(next.getDate() + 1);
+  }
+  return next.getTime();
+}
+
+function ensureDailyScanAlarm() {
+  chrome.alarms.get(DAILY_SCAN_ALARM, (alarm) => {
+    if (alarm) return;
+    chrome.alarms.create(DAILY_SCAN_ALARM, {
+      when: nextDailyScanTime(),
+      periodInMinutes: 24 * 60,
+    });
+  });
+}
+
+ensureDailyScanAlarm();
+
+chrome.runtime.onInstalled.addListener(() => {
+  applyBookmarkActionIcon();
+  chrome.alarms.clear(DAILY_SCAN_ALARM, ensureDailyScanAlarm);
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  applyBookmarkActionIcon();
+  ensureDailyScanAlarm();
+});
 
 // --- Chrome bookmark helpers ---
 
@@ -62,16 +112,203 @@ async function searchBookmarks(query) {
 }
 
 async function saveCurrentTab(tab) {
+  if (!isSaveablePageUrl(tab?.url)) {
+    throw new Error('当前页面不是可保存的普通网页');
+  }
+  const chromeBookmark = await findChromeBookmarkForUrl(tab.url);
   const r = await fetch(`${API_BASE}/api/extension/save`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: tab.url, title: tab.title }),
+    body: JSON.stringify({
+      url: tab.url,
+      title: tab.title,
+      faviconUrl: tab.favIconUrl ?? null,
+      folderPath: chromeBookmark?.folderPath ?? null,
+      chromeId: chromeBookmark?.chromeId ?? null,
+      chromeParentId: chromeBookmark?.chromeParentId ?? null,
+      createdAt: chromeBookmark?.createdAt ?? null,
+    }),
   });
   if (!r.ok) throw new Error('Save failed');
-  return r.json();
+  const saved = await r.json();
+
+  if (!chromeBookmark && saved.bookmark?.id && !saved.bookmark?.chromeId) {
+    if (saved.bookmark.folderPath) {
+      const created = await createChromeBookmarkForSavedBookmark(saved.bookmark);
+      saved.bookmark.chromeId = created.id;
+      saved.bookmark.chromeParentId = created.parentId ?? null;
+      saved.chromeCreated = true;
+      await updateSavedBookmarkChromeLink(saved.bookmark.id, created);
+    } else {
+      saved.chromeCreated = false;
+      saved.chromeSkippedReason = 'needs_folder';
+    }
+  } else {
+    saved.chromeCreated = false;
+    saved.chromeSkippedReason = chromeBookmark ? 'already_in_chrome' : 'already_linked';
+  }
+
+  return saved;
 }
 
+function isSaveablePageUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+async function findChromeBookmarkForUrl(url) {
+  const bookmarks = await getAllBookmarks();
+  const normalizedTarget = normalizeComparableUrl(url);
+  return bookmarks.find((bookmark) => normalizeComparableUrl(bookmark.url) === normalizedTarget) ?? null;
+}
+
+function normalizeComparableUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    url.hash = '';
+    if (url.pathname.length > 1 && url.pathname.endsWith('/')) {
+      url.pathname = url.pathname.slice(0, -1);
+    }
+    return url.toString();
+  } catch {
+    return String(rawUrl ?? '').trim();
+  }
+}
+
+async function createChromeBookmarkForSavedBookmark(bookmark) {
+  const folderMap = await buildFolderMap();
+  const parentId = await ensureChromeFolder(bookmark.folderPath, folderMap);
+  return new Promise((resolve, reject) => {
+    chrome.bookmarks.create(
+      {
+        parentId,
+        title: bookmark.title || bookmark.url,
+        url: bookmark.url,
+      },
+      (created) => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        resolve(created);
+      }
+    );
+  });
+}
+
+async function updateSavedBookmarkChromeLink(bookmarkId, created) {
+  const r = await fetch(`${API_BASE}/api/bookmarks/${encodeURIComponent(bookmarkId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chromeId: created.id,
+      chromeParentId: created.parentId ?? null,
+    }),
+  });
+  if (!r.ok) throw new Error(`Failed to link Chrome bookmark: ${r.status}`);
+}
+
+async function runDailyScan() {
+  const startedAt = new Date().toISOString();
+
+  try {
+    const bookmarks = await getAllBookmarks();
+    const imported = await importToSiftMarks(bookmarks);
+
+    const analysisRes = await fetch(`${API_BASE}/api/index-bookmarks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        limit: 50,
+        onlyMissing: true,
+        useAI: true,
+        fetchContent: true,
+        fetchTimeout: 5000,
+      }),
+    });
+    const analysis = analysisRes.ok ? await analysisRes.json() : { error: `index ${analysisRes.status}` };
+
+    const rescueRes = await fetch(`${API_BASE}/api/rescue`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deep: true, analysisLimit: 20 }),
+    });
+    const rescue = rescueRes.ok ? await rescueRes.json() : { error: `rescue ${rescueRes.status}` };
+
+    const result = { ok: true, startedAt, finishedAt: new Date().toISOString(), imported, analysis, rescue };
+    await chrome.storage.local.set({ lastDailyScan: result });
+    return result;
+  } catch (err) {
+    const result = {
+      ok: false,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      error: err instanceof Error ? err.message : String(err),
+    };
+    await chrome.storage.local.set({ lastDailyScan: result });
+    return result;
+  }
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === DAILY_SCAN_ALARM) {
+    runDailyScan();
+  }
+});
+
 // --- Chrome folder cache ---
+
+const BOOKMARK_BAR_ROOT_TITLES = new Set(['书签栏', 'Bookmarks Bar', 'Bookmarks bar', 'Bookmarks Toolbar']);
+const OTHER_BOOKMARKS_ROOT_TITLES = new Set(['其他书签', 'Other Bookmarks', 'Other bookmarks']);
+const MOBILE_BOOKMARKS_ROOT_TITLES = new Set(['移动设备书签', 'Mobile Bookmarks', 'Mobile bookmarks']);
+
+function isBookmarkBarRootTitle(title) {
+  return BOOKMARK_BAR_ROOT_TITLES.has(title);
+}
+
+function isKnownChromeRootTitle(title) {
+  return (
+    isBookmarkBarRootTitle(title) ||
+    OTHER_BOOKMARKS_ROOT_TITLES.has(title) ||
+    MOBILE_BOOKMARKS_ROOT_TITLES.has(title)
+  );
+}
+
+function normalizeSyncFolderPath(folderPath) {
+  const parts = String(folderPath ?? '')
+    .split('/')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length > 0 && isBookmarkBarRootTitle(parts[0])) {
+    return parts.slice(1).join('/');
+  }
+  if (parts.length > 0 && (OTHER_BOOKMARKS_ROOT_TITLES.has(parts[0]) || MOBILE_BOOKMARKS_ROOT_TITLES.has(parts[0]))) {
+    return '';
+  }
+
+  return parts.join('/');
+}
+
+function addFolderAlias(folderMap, path, id) {
+  const raw = String(path ?? '').trim();
+  if (raw) folderMap.set(raw, id);
+
+  const normalized = normalizeSyncFolderPath(path);
+  if (!normalized) return;
+  folderMap.set(normalized, id);
+
+  const parts = normalized.split('/').filter(Boolean);
+  const leafName = parts[parts.length - 1];
+  if (parts.length === 1 && leafName && !folderMap.has(leafName)) {
+    folderMap.set(leafName, id);
+  }
+}
 
 // Build a map: folderPath -> chromeId for existing Chrome bookmark folders
 async function buildFolderMap() {
@@ -81,7 +318,9 @@ async function buildFolderMap() {
   function walk(node, pathParts) {
     if (node.children) {
       const currentPath = pathParts.length > 0 ? pathParts.join('/') : '';
-      if (currentPath) map.set(currentPath, node.id);
+      if (currentPath) {
+        addFolderAlias(map, currentPath, node.id);
+      }
 
       for (const child of node.children) {
         if (child.children !== undefined) {
@@ -100,12 +339,24 @@ async function buildFolderMap() {
 // Ensure a folder path exists in Chrome, creating intermediate folders as needed.
 // Returns the Chrome folder ID.
 async function ensureChromeFolder(folderPath, folderMap) {
+  folderPath = normalizeSyncFolderPath(folderPath);
+  if (!folderPath) return '1';
   if (folderMap.has(folderPath)) return folderMap.get(folderPath);
 
   const parts = folderPath.split('/');
-  let parentId = '1'; // "1" = Bookmarks Bar in Chrome
+  if (parts.length === 1 && folderMap.has(parts[0])) {
+    return folderMap.get(parts[0]);
+  }
 
-  for (let i = 0; i < parts.length; i++) {
+  let parentId = '1'; // "1" = Bookmarks Bar in Chrome
+  let startIndex = 0;
+
+  if (parts.length > 0 && isKnownChromeRootTitle(parts[0]) && folderMap.has(parts[0])) {
+    parentId = folderMap.get(parts[0]);
+    startIndex = 1;
+  }
+
+  for (let i = startIndex; i < parts.length; i++) {
     const subPath = parts.slice(0, i + 1).join('/');
     if (folderMap.has(subPath)) {
       parentId = folderMap.get(subPath);
@@ -117,23 +368,12 @@ async function ensureChromeFolder(folderPath, folderMap) {
           else resolve(result);
         });
       });
-      folderMap.set(subPath, created.id);
+      addFolderAlias(folderMap, subPath, created.id);
       parentId = created.id;
     }
   }
 
   return parentId;
-}
-
-function normalizeUrlForDedupe(url) {
-  try {
-    const u = new URL(url);
-    u.hash = '';
-    if (u.pathname !== '/') u.pathname = u.pathname.replace(/\/$/, '');
-    return u.toString();
-  } catch {
-    return url;
-  }
 }
 
 async function getChromeTree() {
@@ -145,28 +385,6 @@ function getBookmarkBar(tree) {
   return root.children?.find((node) => node.id === '1' || node.title === '书签栏' || node.title === 'Bookmarks Bar');
 }
 
-function collectBookmarkBarItems(root) {
-  const bookmarks = [];
-  const folders = [];
-
-  function walk(node, path = []) {
-    if (node.url) {
-      bookmarks.push({ node, path });
-      return;
-    }
-
-    if (node.children) {
-      if (node.id !== root.id) folders.push({ node, path });
-      for (const child of node.children) {
-        walk(child, [...path, node.title]);
-      }
-    }
-  }
-
-  walk(root, []);
-  return { bookmarks, folders };
-}
-
 async function removeBookmarkTree(id) {
   return new Promise((resolve, reject) => {
     chrome.bookmarks.removeTree(id, () => {
@@ -176,7 +394,7 @@ async function removeBookmarkTree(id) {
   });
 }
 
-// Generic bookmark-bar tidying: remove duplicate URLs and empty folders.
+// Generic bookmark-bar tidying: remove empty folders left by accepted move/delete ops.
 // All category-specific moves come from the server as `move` ops in the sync plan,
 // not from any classifier baked into the extension.
 async function cleanupBookmarkBar() {
@@ -184,24 +402,6 @@ async function cleanupBookmarkBar() {
   const bookmarkBar = getBookmarkBar(tree);
   if (!bookmarkBar) return { duplicatesRemoved: 0, emptyFoldersRemoved: 0 };
 
-  const { bookmarks } = collectBookmarkBarItems(bookmarkBar);
-  const byUrl = new Map();
-  for (const item of bookmarks) {
-    const key = normalizeUrlForDedupe(item.node.url);
-    if (!byUrl.has(key)) byUrl.set(key, item);
-  }
-
-  let duplicatesRemoved = 0;
-  for (const item of bookmarks) {
-    const key = normalizeUrlForDedupe(item.node.url);
-    if (byUrl.get(key).node.id !== item.node.id) {
-      await removeBookmarkTree(item.node.id);
-      duplicatesRemoved++;
-    }
-  }
-
-  const afterDedupeTree = await getChromeTree();
-  const afterDedupeBar = getBookmarkBar(afterDedupeTree);
   let emptyFoldersRemoved = 0;
 
   async function removeEmptyFolders(node) {
@@ -210,14 +410,14 @@ async function cleanupBookmarkBar() {
     }
 
     const refreshed = (await new Promise((resolve) => chrome.bookmarks.getSubTree(node.id, resolve)))[0];
-    if (refreshed.id !== afterDedupeBar.id && refreshed.children && refreshed.children.length === 0) {
+    if (refreshed.id !== bookmarkBar.id && refreshed.children && refreshed.children.length === 0) {
       await removeBookmarkTree(refreshed.id);
       emptyFoldersRemoved++;
     }
   }
 
-  await removeEmptyFolders(afterDedupeBar);
-  return { duplicatesRemoved, emptyFoldersRemoved };
+  await removeEmptyFolders(bookmarkBar);
+  return { duplicatesRemoved: 0, emptyFoldersRemoved };
 }
 
 // --- Sync back to Chrome ---
