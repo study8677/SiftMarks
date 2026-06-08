@@ -11,6 +11,7 @@ export async function GET(request: Request) {
   const limit = parseInt(searchParams.get('limit') ?? '50');
   const offset = parseInt(searchParams.get('offset') ?? '0');
   const isDuplicate = searchParams.get('isDuplicate');
+  const chromeLinked = searchParams.get('chromeLinked');
 
   const db = getDB();
   const result = db.listBookmarks({
@@ -20,6 +21,8 @@ export async function GET(request: Request) {
     limit,
     offset,
     isDuplicate: isDuplicate === 'true' ? true : isDuplicate === 'false' ? false : undefined,
+    chromeLinked: chromeLinked === 'true' ? true : undefined,
+    chromeUnlinked: chromeLinked === 'false' ? true : undefined,
   });
 
   // Enrich with tags

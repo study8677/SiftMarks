@@ -151,13 +151,14 @@ const PROVIDERS = {
 
 const DEFAULT_FOLDERS = ['开发资源', 'AI 工具', '学习资料', '产品灵感'];
 const DEFAULT_COMMON_TAGS = ['MCP', 'AI 工具', '开发文档', '教程', 'SaaS', '产品灵感'];
+const MAX_EDIT_TAGS = 3;
 const DEMO_BOOKMARK = {
   id: 'demo-bookmark',
   title: 'OpenAI API Docs',
   url: 'https://platform.openai.com/docs',
   folderPath: '开发资源',
   summary: 'OpenAI 官方 API 文档，包含模型调用、接口说明、鉴权方式与开发示例，适合开发者查阅与集成。',
-  tags: ['AI', 'API', '文档', '开发工具'],
+  tags: ['AI', 'API', '文档'],
   status: 'saved',
 };
 
@@ -526,14 +527,14 @@ function populateFolderSelect(selectedFolder) {
 function renderTagChips() {
   els.tagChipRow.innerHTML = editTags.map((tag) => `
     <span class="tag-chip">
-      ${escapeHtml(tag)}
+      <span class="tag-chip-label">${escapeHtml(tag)}</span>
       <button type="button" data-remove-tag="${escapeHtml(tag)}" aria-label="移除 ${escapeHtml(tag)}">×</button>
     </span>
   `).join('');
 
   const common = dedupeNames(knownTags)
     .filter((tag) => !editTags.some((current) => current.toLowerCase() === tag.toLowerCase()))
-    .slice(0, 4);
+    .slice(0, Math.max(0, MAX_EDIT_TAGS - editTags.length));
   els.commonTagRow.innerHTML = common.map((tag) => `
     <button class="common-tag" type="button" data-add-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
   `).join('');
@@ -542,6 +543,11 @@ function renderTagChips() {
 function addEditTag(rawTag) {
   const tag = String(rawTag ?? '').trim();
   if (!tag) return;
+  const exists = editTags.some((current) => current.toLowerCase() === tag.toLowerCase());
+  if (!exists && editTags.length >= MAX_EDIT_TAGS) {
+    showStatus(`标签最多 ${MAX_EDIT_TAGS} 个`, 'info');
+    return;
+  }
   editTags = dedupeNames([...editTags, tag]);
   renderTagChips();
 }
@@ -573,7 +579,7 @@ async function showEditBookmark(bookmark) {
   await loadFoldersAndTags();
 
   const tags = normalizeBookmarkTags(bookmark.tags);
-  editTags = tags.length ? tags : [];
+  editTags = tags.length ? tags.slice(0, MAX_EDIT_TAGS) : [];
 
   els.editTitleInput.value = bookmark.title ?? '';
   els.editUrlInput.value = bookmark.url ?? '';
@@ -715,9 +721,12 @@ async function syncBackToBrowser() {
     const total = Number(data.total ?? 0);
     const applied = Number(data.applied ?? 0);
     const failed = Number(data.failed ?? 0);
+    const firstError = Array.isArray(data.errors) ? data.errors[0]?.message : null;
 
     if (total === 0) {
       showStatus('暂无需要写回 Chrome 的改动', 'info');
+    } else if (applied === 0) {
+      showStatus(firstError ? `写回未完成：${firstError}` : '写回未完成，请重新加载扩展后重试', 'error');
     } else if (failed > 0) {
       showStatus(`已写回 ${applied} 项，${failed} 项失败`, 'error');
     } else {

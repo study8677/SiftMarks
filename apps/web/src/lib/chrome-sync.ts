@@ -2,8 +2,9 @@ import type { SiftMarksDB } from '@siftmarks/db';
 
 export interface ChromeOp {
   id: string;
-  action: 'update' | 'remove' | 'move';
-  chromeId: string;
+  action: 'update' | 'remove' | 'move' | 'create';
+  chromeId?: string;
+  bookmarkId?: string;
   bookmarkTitle?: string | null;
   bookmarkUrl?: string;
   title?: string;
@@ -72,6 +73,26 @@ export function getChromeSyncPlan(db: SiftMarksDB): ChromeSyncPlan {
         skipped++;
         break;
     }
+  }
+
+  const localOnlyBookmarks = db.listBookmarks({
+    limit: 100000,
+    chromeUnlinked: true,
+  }).items;
+
+  for (const bookmark of localOnlyBookmarks) {
+    if (!bookmark.folderPath || !bookmark.url || bookmark.status === 'deleted') continue;
+
+    opsByKey.set(`create:${bookmark.id}`, {
+      id: `create:${bookmark.id}`,
+      action: 'create',
+      bookmarkId: bookmark.id,
+      bookmarkTitle: bookmark.title,
+      bookmarkUrl: bookmark.url,
+      title: bookmark.title ?? undefined,
+      url: bookmark.url,
+      folderPath: bookmark.folderPath,
+    });
   }
 
   return { ops: Array.from(opsByKey.values()), skipped };

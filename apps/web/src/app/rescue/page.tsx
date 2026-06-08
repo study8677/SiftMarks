@@ -22,8 +22,9 @@ interface ChromeSyncNotice {
 
 interface ChromeSyncOp {
   id: string;
-  action: 'update' | 'remove' | 'move';
-  chromeId: string;
+  action: 'update' | 'remove' | 'move' | 'create';
+  chromeId?: string;
+  bookmarkId?: string;
   bookmarkTitle?: string | null;
   bookmarkUrl?: string;
   title?: string;
@@ -250,7 +251,7 @@ export default function RescuePage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? '保存文件夹策略失败。');
       setTopLevelFolderLimit(normalizedLimit);
-      setNotice('文件夹策略已保存，下一次生成整理建议会按这个规则执行。');
+      setNotice('文件夹策略已保存。已有待审查建议仍来自旧策略；请重新生成整理建议后再接受分类建议。');
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存文件夹策略失败。');
     } finally {
@@ -409,7 +410,7 @@ export default function RescuePage() {
       <div className="mb-4 rounded-lg border border-[#dfe6f2] bg-white p-3">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="text-sm text-[#475467]">
-            接受后的改名、移动和删除会先留在本地同步计划里，预览确认后再由插件写回 Chrome。
+            接受后的改名、移动、删除，以及本地已分类但未写入 Chrome 的书签，会先留在同步计划里。
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -436,7 +437,7 @@ export default function RescuePage() {
           <p className="font-semibold">
             {syncResult.count > 0 ? `有 ${syncResult.count} 项 Chrome 改动等待插件写回。` : '当前没有需要写回 Chrome 的改动。'}
           </p>
-          <p className="mt-1 text-sm text-muted">这里只预览已接受建议的写回影响；预览不会修改 Chrome。</p>
+          <p className="mt-1 text-sm text-muted">这里只预览待写回影响；预览不会修改 Chrome。</p>
           {syncResult.count > 0 && (
             <>
               <p className="mt-1 text-sm text-muted">真正写入 Chrome 仍需在 SiftMarks 插件弹窗点击“安全写回 Chrome”。</p>
@@ -445,7 +446,7 @@ export default function RescuePage() {
                   <div key={op.id} className="rounded-lg border border-[#b9d3ff] bg-white/85 px-3 py-2 text-sm">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-md bg-[#eef4ff] px-2 py-0.5 text-xs font-semibold text-[#1463ff]">{formatChromeOpAction(op)}</span>
-                      <span className="min-w-0 truncate font-medium text-[#101828]">{op.bookmarkTitle || op.bookmarkUrl || op.chromeId}</span>
+                      <span className="min-w-0 truncate font-medium text-[#101828]">{op.bookmarkTitle || op.bookmarkUrl || op.chromeId || op.bookmarkId}</span>
                     </div>
                     <div className="mt-1 text-xs text-[#667085]">{formatChromeOpDetail(op)}</div>
                   </div>
@@ -598,11 +599,13 @@ function formatDiffValue(value: unknown, fallback = ''): string {
 function formatChromeOpAction(op: ChromeSyncOp): string {
   if (op.action === 'update') return '改标题';
   if (op.action === 'move') return '移动文件夹';
+  if (op.action === 'create') return '写入 Chrome';
   return '删除书签';
 }
 
 function formatChromeOpDetail(op: ChromeSyncOp): string {
   if (op.action === 'update') return `Chrome 标题将改为：${op.title || '未命名'}`;
   if (op.action === 'move') return `Chrome 书签将移动到：${op.folderPath || '书签栏'}`;
-  return `Chrome 中会删除这条书签：${op.bookmarkUrl || op.chromeId}`;
+  if (op.action === 'create') return `Chrome 会保存到：${op.folderPath || '书签栏'}`;
+  return `Chrome 中会删除这条书签：${op.bookmarkUrl || op.chromeId || op.bookmarkId}`;
 }

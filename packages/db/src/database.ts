@@ -98,8 +98,10 @@ export class SiftMarksDB {
     folder?: string;
     tag?: string;
     isDuplicate?: boolean;
+    chromeLinked?: boolean;
+    chromeUnlinked?: boolean;
   } = {}): { items: Bookmark[]; total: number } {
-    const { limit = 50, offset = 0, status, folder, tag, isDuplicate } = options;
+    const { limit = 50, offset = 0, status, folder, tag, isDuplicate, chromeLinked, chromeUnlinked } = options;
 
     let where = 'WHERE 1=1';
     const params: any = {};
@@ -127,6 +129,12 @@ export class SiftMarksDB {
         GROUP BY normalized_url
         HAVING COUNT(*) > 1
       )`;
+    }
+    if (chromeLinked) {
+      where += ' AND b.chrome_id IS NOT NULL';
+    }
+    if (chromeUnlinked) {
+      where += ' AND b.chrome_id IS NULL';
     }
 
     let query: string;
@@ -422,14 +430,16 @@ export class SiftMarksDB {
     `).run(folder);
   }
 
-  listFolders(): Array<Folder & { count: number }> {
+  listFolders(options: { chromeLinked?: boolean } = {}): Array<Folder & { count: number }> {
     const rows = this.db.prepare('SELECT * FROM folders').all() as any[];
+    const chromeLinkedClause = options.chromeLinked ? 'AND chrome_id IS NOT NULL' : '';
     const countRows = this.db.prepare(`
       SELECT folder_path, COUNT(*) as count
       FROM bookmarks
       WHERE folder_path IS NOT NULL
         AND TRIM(folder_path) != ''
         AND status != 'deleted'
+        ${chromeLinkedClause}
       GROUP BY folder_path
     `).all() as any[];
     const byPath = new Map<string, Folder & { count: number }>();

@@ -433,6 +433,7 @@ async function syncBackToChrome() {
   // Build folder map for move operations
   const folderMap = await buildFolderMap();
   const syncedIds = [];
+  const errors = [];
   let failed = 0;
 
   for (const op of ops || []) {
@@ -471,10 +472,62 @@ async function syncBackToChrome() {
           });
         });
         syncedIds.push(op.id);
+
+      } else if (op.action === 'create') {
+        if (!op.bookmarkId || !(op.url || op.bookmarkUrl)) {
+          throw new Error('Create op missing bookmark id or url');
+        }
+
+        const url = op.url || op.bookmarkUrl;
+        const targetFolderId = await ensureChromeFolder(op.folderPath, folderMap);
+        const existing = await findChromeBookmarkForUrl(url);
+        let linked;
+
+        if (existing?.chromeId) {
+          if (existing.chromeParentId !== targetFolderId) {
+            const moved = await new Promise((resolve, reject) => {
+              chrome.bookmarks.move(existing.chromeId, { parentId: targetFolderId }, (r) => {
+                if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+                else resolve(r);
+              });
+            });
+            linked = moved;
+          } else {
+            linked = { id: existing.chromeId, parentId: existing.chromeParentId ?? targetFolderId };
+          }
+        } else {
+          linked = await new Promise((resolve, reject) => {
+            chrome.bookmarks.create(
+              {
+                parentId: targetFolderId,
+                title: op.title || op.bookmarkTitle || url,
+                url,
+              },
+              (created) => {
+                const error = chrome.runtime.lastError;
+                if (error) {
+                  reject(new Error(error.message));
+                  return;
+                }
+                resolve(created);
+              }
+            );
+          });
+        }
+
+        await updateSavedBookmarkChromeLink(op.bookmarkId, linked);
+        syncedIds.push(op.id);
+      } else {
+        throw new Error(`Unsupported sync action: ${op.action}`);
       }
     } catch (err) {
       console.error(`Sync op ${op.id} failed:`, err);
       failed++;
+      errors.push({
+        id: op.id,
+        action: op.action,
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -497,6 +550,7 @@ async function syncBackToChrome() {
     failed,
     total: ops?.length ?? 0,
     hasOps,
+    errors,
     cleanup,
   };
 }

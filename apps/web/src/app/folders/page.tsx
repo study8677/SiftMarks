@@ -30,6 +30,7 @@ export default function FoldersPage() {
   const [loadingFolders, setLoadingFolders] = useState(true);
   const [loadingBookmarks, setLoadingBookmarks] = useState(false);
   const [query, setQuery] = useState('');
+  const [localPendingCount, setLocalPendingCount] = useState(0);
 
   const selectedFolder = useMemo(
     () => folders.find((folder) => folder.path === selectedPath) ?? null,
@@ -45,10 +46,11 @@ export default function FoldersPage() {
   const loadFolders = useCallback(async () => {
     setLoadingFolders(true);
     try {
-      const res = await fetch('/api/folders');
+      const res = await fetch('/api/folders?scope=chrome');
       const data = await res.json();
       const nextFolders: FolderItem[] = data.folders ?? [];
       setFolders(nextFolders);
+      setLocalPendingCount(Number(data.localPendingCount ?? 0));
       setSelectedPath((current) => current && nextFolders.some((folder) => folder.path === current)
         ? current
         : nextFolders[0]?.path ?? null
@@ -67,7 +69,7 @@ export default function FoldersPage() {
 
     setLoadingBookmarks(true);
     try {
-      const params = new URLSearchParams({ folder: folderPath, limit: '100', offset: '0' });
+      const params = new URLSearchParams({ folder: folderPath, limit: '100', offset: '0', chromeLinked: 'true' });
       const res = await fetch(`/api/bookmarks?${params}`);
       const data = await res.json();
       setBookmarks(data.items ?? []);
@@ -94,11 +96,21 @@ export default function FoldersPage() {
       <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-[22px] font-bold tracking-tight text-[#101828]">文件夹</h1>
-          <p className="mt-1 text-sm text-[#475467]">按浏览器文件夹路径查看和管理书签。</p>
+          <p className="mt-1 text-sm text-[#475467]">查看已连接 Chrome 的书签文件夹。</p>
         </div>
-        <div className="rounded-xl border border-[#dfe6f2] bg-white px-4 py-3 text-sm shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
-          <span className="text-[#667085]">文件夹</span>
-          <span className="ml-2 font-bold text-[#101828]">{folders.length}</span>
+        <div className="flex flex-wrap gap-2">
+          <div className="rounded-xl border border-[#dfe6f2] bg-white px-4 py-3 text-sm shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
+            <span className="text-[#667085]">Chrome 文件夹</span>
+            <span className="ml-2 font-bold text-[#101828]">{folders.length}</span>
+          </div>
+          {localPendingCount > 0 && (
+            <Link
+              href="/rescue"
+              className="rounded-xl border border-[#b9d3ff] bg-[#eef4ff] px-4 py-3 text-sm font-semibold text-[#1463ff]"
+            >
+              待写回 {localPendingCount}
+            </Link>
+          )}
         </div>
       </header>
 

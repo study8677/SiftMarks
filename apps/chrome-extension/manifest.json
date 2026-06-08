@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SiftMarks",
   "description": "把浏览器书签变成可搜索的 AI 记忆库",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "permissions": [
     "bookmarks",
     "activeTab",
