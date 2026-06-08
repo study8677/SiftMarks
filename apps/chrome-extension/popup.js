@@ -639,6 +639,10 @@ async function saveCurrentPage() {
       showStatus(`已保存，并加入 Chrome「${result.data.bookmark?.folderPath ?? '书签栏'}」`);
     } else if (result.data?.chromeSkippedReason === 'needs_folder') {
       showStatus('已保存到本地；AI 暂未归类，先不写入 Chrome', 'info');
+    } else if (result.data?.chromeSkippedReason === 'already_in_chrome') {
+      showStatus('该页面已在 Chrome 收藏中，本地信息已同步');
+    } else if (result.data?.chromeSkippedReason === 'already_linked') {
+      showStatus('该页面已连接 Chrome 收藏，本地信息已更新');
     } else {
       showStatus(result.data?.status === 'already_exists' ? '该页面已在知识库中' : '已保存当前页面');
     }
