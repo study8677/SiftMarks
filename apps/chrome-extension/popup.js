@@ -152,6 +152,39 @@ const PROVIDERS = {
 const DEFAULT_FOLDERS = ['开发资源', 'AI 工具', '学习资料', '产品灵感'];
 const DEFAULT_COMMON_TAGS = ['MCP', 'AI 工具', '开发文档', '教程', 'SaaS', '产品灵感'];
 const MAX_EDIT_TAGS = 3;
+const POPUP_MIN_HEIGHT = 280;
+const POPUP_HOME_HEIGHT = 415;
+const POPUP_MAX_HEIGHT = 512;
+const POPUP_SUGGESTION_GROUPS = [
+  {
+    types: ['rename'],
+    label: '标题命名优化',
+    icon: 'folder',
+    accent: '#15803d',
+    tint: '#eef8ed',
+  },
+  {
+    types: ['move'],
+    label: '移动到推荐分类',
+    icon: 'folder-arrow',
+    accent: '#f97316',
+    tint: '#fff2e7',
+  },
+  {
+    types: ['delete_broken'],
+    label: '标记失效链接',
+    icon: 'broken-link',
+    accent: '#ef4444',
+    tint: '#fff0f0',
+  },
+  {
+    types: ['tag', 'normalize_tag'],
+    label: '整理辅助标签',
+    icon: 'dots',
+    accent: '#7c3aed',
+    tint: '#f1ecff',
+  },
+];
 const DEMO_BOOKMARK = {
   id: 'demo-bookmark',
   title: 'OpenAI API Docs',
@@ -174,7 +207,9 @@ const els = {
   btnConfigureAI: document.getElementById('btnConfigureAI'),
   btnSaveTab: document.getElementById('btnSaveTab'),
   btnImport: document.getElementById('btnImport'),
-  btnCategoryReview: document.getElementById('btnCategoryReview'),
+  suggestionList: document.getElementById('suggestionList'),
+  btnAcceptAllSuggestions: document.getElementById('btnAcceptAllSuggestions'),
+  btnUndoAcceptedSuggestions: document.getElementById('btnUndoAcceptedSuggestions'),
   btnSyncBack: document.getElementById('btnSyncBack'),
   btnRescue: document.getElementById('btnRescue'),
   settingsBtn: document.getElementById('settingsBtn'),
@@ -222,6 +257,27 @@ let currentBookmark = null;
 let editTags = [];
 let knownFolders = [...DEFAULT_FOLDERS];
 let knownTags = [...DEFAULT_COMMON_TAGS];
+let pendingSuggestionTotal = 0;
+let syncBackSuggestionCount = 0;
+let lastPopupAcceptedSuggestionIds = [];
+
+function resizePopupToContent() {
+  const shell = document.querySelector('.popup-shell');
+  if (!shell) return;
+
+  requestAnimationFrame(() => {
+    const rect = shell.getBoundingClientRect();
+    const minHeight = currentView === 'home' || currentView === 'config' || currentView === 'edit'
+      ? POPUP_HOME_HEIGHT
+      : POPUP_MIN_HEIGHT;
+    const height = Math.min(
+      POPUP_MAX_HEIGHT,
+      Math.max(minHeight, Math.ceil(rect.height))
+    );
+    document.documentElement.style.height = `${height}px`;
+    document.body.style.height = `${height}px`;
+  });
+}
 
 function hasChromeRuntime() {
   return typeof chrome !== 'undefined' && Boolean(chrome.runtime?.sendMessage);
@@ -302,10 +358,88 @@ function setBusy(button, busy, busyText) {
   };
 }
 
-function countLabel(count, emptyText, suffix) {
-  if (!Number.isFinite(count)) return `-- ${suffix}`;
-  if (count <= 0) return emptyText;
-  return `${count.toLocaleString()} ${suffix}`;
+function itemCountLabel(count) {
+  if (!Number.isFinite(count)) return '--项';
+  return `${Math.max(0, count).toLocaleString()}项`;
+}
+
+function optimizationLabel(count) {
+  if (!Number.isFinite(count)) return '发现 -- 项可优化';
+  if (count <= 0) return '暂无待优化';
+  return `发现 ${count.toLocaleString()} 项可优化`;
+}
+
+function syncBackLabel(count) {
+  if (!Number.isFinite(count) || count <= 0) return '已开启';
+  return `${count.toLocaleString()}项待写回`;
+}
+
+function setText(element, text) {
+  if (element) element.textContent = text;
+}
+
+function suggestionTypeCounts(items) {
+  const counts = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    const type = typeof item?.type === 'string' ? item.type : '';
+    if (!type || type === 'merge_duplicate') continue;
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function suggestionGroupIcon(group) {
+  if (group.icon === 'dots') {
+    return `
+      <span class="dot-grid" aria-hidden="true">
+        <span></span><span></span><span></span>
+        <span></span><span></span><span></span>
+        <span></span><span></span><span></span>
+      </span>
+    `;
+  }
+  return `<svg><use href="#icon-${group.icon}"></use></svg>`;
+}
+
+function renderSuggestionRows(counts) {
+  if (!els.suggestionList) return;
+
+  const rows = POPUP_SUGGESTION_GROUPS
+    .map((group) => ({
+      ...group,
+      count: group.types.reduce((sum, type) => sum + (counts.get(type) ?? 0), 0),
+    }))
+    .filter((group) => group.count > 0);
+
+  els.suggestionList.hidden = rows.length === 0;
+  els.suggestionList.innerHTML = rows.map((group) => `
+    <button class="suggestion-row" type="button" data-open-rescue data-suggestion-types="${group.types.join(',')}">
+      <span class="suggestion-icon" style="--accent: ${group.accent};">
+        ${suggestionGroupIcon(group)}
+      </span>
+      <span class="suggestion-title">${group.label}</span>
+      <span class="item-count" style="--accent: ${group.accent}; --tint: ${group.tint};">${itemCountLabel(group.count)}</span>
+      <svg class="chevron"><use href="#icon-chevron"></use></svg>
+    </button>
+  `).join('');
+}
+
+function updateSuggestionOverview(items, total) {
+  const counts = suggestionTypeCounts(items);
+
+  setText(els.categoryCount, optimizationLabel(total));
+  renderSuggestionRows(counts);
+  resizePopupToContent();
+}
+
+function updateReviewActionState() {
+  if (els.btnAcceptAllSuggestions) {
+    els.btnAcceptAllSuggestions.disabled = pendingSuggestionTotal <= 0;
+  }
+  if (els.btnUndoAcceptedSuggestions) {
+    els.btnUndoAcceptedSuggestions.disabled =
+      lastPopupAcceptedSuggestionIds.length <= 0 && syncBackSuggestionCount <= 0;
+  }
 }
 
 function providerKeyFromSettings(settings) {
@@ -358,6 +492,7 @@ function setView(view) {
   els.homeView.hidden = view !== 'home';
   els.configView.hidden = view !== 'config';
   els.editView.hidden = view !== 'edit';
+  resizePopupToContent();
 }
 
 function populateModels(providerKey, selectedModel) {
@@ -599,7 +734,7 @@ async function loadPanelState() {
       syncPlan,
     ] = await Promise.all([
       api('/api/settings'),
-      api('/api/suggestions?status=pending&limit=1'),
+      api('/api/suggestions?status=pending&limit=100000'),
       api('/api/extension/sync-back'),
     ]);
 
@@ -611,20 +746,21 @@ async function loadPanelState() {
       applySettingsToForm(settings);
     }
 
-    const pendingTotal = Number(pendingSuggestions.total ?? 0);
+    pendingSuggestionTotal = Number(pendingSuggestions.total ?? 0);
+    syncBackSuggestionCount = Number(syncPlan.count ?? 0);
 
-    els.categoryCount.textContent = countLabel(pendingTotal, '暂无待审查', '条待审查');
-    els.syncBackCount.textContent = countLabel(
-      Number(syncPlan.count ?? 0),
-      '暂无待写回',
-      '项待写回'
-    );
+    updateSuggestionOverview(pendingSuggestions.items, pendingSuggestionTotal);
+    els.syncBackCount.textContent = syncBackLabel(syncBackSuggestionCount);
+    updateReviewActionState();
   } catch {
     setOffline(true);
     currentSettings = null;
+    pendingSuggestionTotal = 0;
+    syncBackSuggestionCount = 0;
     updateAI(null);
-    els.categoryCount.textContent = '-- 条待审查';
-    els.syncBackCount.textContent = '-- 项待写回';
+    updateSuggestionOverview([], Number.NaN);
+    els.syncBackCount.textContent = '未连接';
+    updateReviewActionState();
   }
 }
 
@@ -711,7 +847,67 @@ async function runRescue() {
   }
 }
 
+async function acceptAllSuggestionsFromPopup() {
+  const restore = setBusy(els.btnAcceptAllSuggestions, true, '接受中...');
+  try {
+    const result = await api('/api/suggestions/accept-all', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    const accepted = Number(result.accepted ?? 0);
+    lastPopupAcceptedSuggestionIds = Array.isArray(result.acceptedIds)
+      ? result.acceptedIds.map((id) => String(id ?? '').trim()).filter(Boolean)
+      : [];
+
+    showStatus(
+      accepted > 0 ? `已接受 ${accepted.toLocaleString()} 条建议` : '暂无可接受建议',
+      accepted > 0 ? 'success' : 'info'
+    );
+    await loadPanelState();
+    await previewSyncBackCount();
+  } catch {
+    showStatus('一键接受失败，请检查本地服务', 'error');
+  } finally {
+    restore();
+    updateReviewActionState();
+  }
+}
+
+async function undoAcceptedSuggestionsFromPopup() {
+  const restore = setBusy(els.btnUndoAcceptedSuggestions, true, '撤回中...');
+  try {
+    const payload = lastPopupAcceptedSuggestionIds.length > 0
+      ? { suggestionIds: lastPopupAcceptedSuggestionIds, includeSynced: true }
+      : {};
+    const result = await api('/api/suggestions/undo-accepted', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const reverted = Number(result.reverted ?? 0);
+    lastPopupAcceptedSuggestionIds = [];
+
+    showStatus(
+      reverted > 0 ? `已撤回 ${reverted.toLocaleString()} 条建议` : '暂无可撤回建议',
+      'info'
+    );
+    await loadPanelState();
+    await previewSyncBackCount();
+  } catch {
+    showStatus('撤回失败，请检查本地服务', 'error');
+  } finally {
+    restore();
+    updateReviewActionState();
+  }
+}
+
 async function syncBackToBrowser() {
+  if (
+    syncBackSuggestionCount > 0 &&
+    !confirm(`将安全写回 Chrome ${syncBackSuggestionCount.toLocaleString()} 项改动。继续吗？`)
+  ) {
+    return;
+  }
+
   const restore = setBusy(els.btnSyncBack, true, '正在写回...');
   try {
     const result = await sendMessage({ action: 'syncBack' });
@@ -744,13 +940,13 @@ async function syncBackToBrowser() {
 async function previewSyncBackCount() {
   try {
     const syncPlan = await api('/api/extension/sync-back');
-    els.syncBackCount.textContent = countLabel(
-      Number(syncPlan.count ?? 0),
-      '暂无待写回',
-      '项待写回'
-    );
+    syncBackSuggestionCount = Number(syncPlan.count ?? 0);
+    els.syncBackCount.textContent = syncBackLabel(syncBackSuggestionCount);
   } catch {
-    els.syncBackCount.textContent = '-- 项待写回';
+    syncBackSuggestionCount = 0;
+    els.syncBackCount.textContent = '未连接';
+  } finally {
+    updateReviewActionState();
   }
 }
 
@@ -906,7 +1102,12 @@ els.providerSelect.addEventListener('change', updateProviderFields);
 els.testConnectionBtn.addEventListener('click', testConnection);
 els.aiConfigForm.addEventListener('submit', saveAIConfig);
 els.dashboardLink.addEventListener('click', () => openPage('/'));
-els.btnCategoryReview.addEventListener('click', () => openPage('/rescue'));
+els.suggestionList.addEventListener('click', (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (target?.closest('[data-open-rescue]')) openPage('/rescue');
+});
+els.btnAcceptAllSuggestions.addEventListener('click', acceptAllSuggestionsFromPopup);
+els.btnUndoAcceptedSuggestions.addEventListener('click', undoAcceptedSuggestionsFromPopup);
 els.btnSyncBack.addEventListener('click', syncBackToBrowser);
 els.btnSaveTab.addEventListener('click', saveCurrentPage);
 els.btnImport.addEventListener('click', importBrowserBookmarks);

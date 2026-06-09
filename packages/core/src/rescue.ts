@@ -273,3 +273,90 @@ export function applySuggestion(db: SiftMarksDB, suggestionId: string): boolean 
   db.updateSuggestionStatus(suggestionId, needsChromeSync ? 'accepted' : 'synced');
   return true;
 }
+
+export function revertSuggestion(
+  db: SiftMarksDB,
+  suggestionId: string,
+  options: { includeSynced?: boolean } = {}
+): boolean {
+  const { items } = db.listSuggestions({ limit: 100000 });
+  const suggestion = items.find((s) => s.id === suggestionId);
+  const canRevertSynced = options.includeSynced === true;
+  if (!suggestion || (suggestion.status !== 'accepted' && !(canRevertSynced && suggestion.status === 'synced'))) {
+    return false;
+  }
+  if (!suggestion.bookmarkId) return false;
+
+  const before = JSON.parse(suggestion.beforeJson);
+  const after = JSON.parse(suggestion.afterJson);
+
+  switch (suggestion.type) {
+    case 'rename':
+      if ('title' in before) {
+        db.updateBookmark(suggestion.bookmarkId, { title: before.title ?? null });
+      }
+      break;
+
+    case 'move': {
+      const folderPath = normalizeFolderPath(String(before.folderPath ?? ''));
+      db.updateBookmark(suggestion.bookmarkId, { folderPath: folderPath || null });
+      break;
+    }
+
+    case 'delete_broken':
+      db.updateBookmark(suggestion.bookmarkId, {
+        status: 'broken' as any,
+        httpStatus: typeof before.httpStatus === 'number' ? before.httpStatus : null,
+      });
+      break;
+
+    case 'tag':
+    case 'normalize_tag': {
+      const currentTags = db.getBookmarkTags(suggestion.bookmarkId);
+      const beforeTags: string[] = Array.isArray(before.tags)
+        ? before.tags.map((tag: unknown) => String(tag ?? '').trim()).filter(Boolean)
+        : [];
+      const afterTags: string[] = Array.isArray(after.tags)
+        ? after.tags.map((tag: unknown) => String(tag ?? '').trim()).filter(Boolean)
+        : [];
+
+      for (const tag of currentTags) {
+        const normalized = normalizeTagName(tag.name);
+        const shouldRemove = beforeTags.length > 0
+          ? !beforeTags.some((name) => normalizeTagName(name) === normalized)
+          : afterTags.some((name) => normalizeTagName(name) === normalized);
+        if (shouldRemove) db.removeBookmarkTag(suggestion.bookmarkId, tag.id);
+      }
+
+      for (const name of beforeTags) {
+        const normalizedName = normalizeTagName(name);
+        if (!normalizedName) continue;
+
+        let tag = db.getTagByNormalizedName(normalizedName);
+        if (!tag) {
+          tag = {
+            id: generateId(),
+            name,
+            normalizedName,
+            createdAt: nowISO(),
+          };
+          db.insertTag(tag);
+        }
+
+        db.addBookmarkTag({
+          bookmarkId: suggestion.bookmarkId,
+          tagId: tag.id,
+          source: 'user',
+          confidence: null,
+        });
+      }
+      break;
+    }
+
+    default:
+      return false;
+  }
+
+  db.updateSuggestionStatus(suggestionId, 'pending');
+  return true;
+}

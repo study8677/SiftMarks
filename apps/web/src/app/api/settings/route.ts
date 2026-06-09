@@ -41,6 +41,13 @@ export async function GET() {
 export async function PATCH(request: Request) {
   const body = await request.json();
   const db = getDB();
+  const currentFolderDepth = db.getSetting('folderDepth') === '2' ? 2 : 1;
+  const rawCurrentTopLevelFolderLimit = Number(db.getSetting('topLevelFolderLimit'));
+  const currentTopLevelFolderLimit = Number.isFinite(rawCurrentTopLevelFolderLimit)
+    ? Math.min(Math.max(Math.round(rawCurrentTopLevelFolderLimit), 3), 50)
+    : DEFAULT_SETTINGS.topLevelFolderLimit;
+  let nextFolderDepth = currentFolderDepth;
+  let nextTopLevelFolderLimit = currentTopLevelFolderLimit;
 
   if (body.aiProvider) {
     const currentStr = db.getSetting('aiProvider');
@@ -76,13 +83,44 @@ export async function PATCH(request: Request) {
     db.setSetting('localOnlyMode', String(body.localOnlyMode));
   }
   if (body.folderDepth !== undefined) {
-    db.setSetting('folderDepth', Number(body.folderDepth) === 2 ? '2' : '1');
+    nextFolderDepth = Number(body.folderDepth) === 2 ? 2 : 1;
+    db.setSetting('folderDepth', String(nextFolderDepth));
   }
   if (body.topLevelFolderLimit !== undefined) {
     const value = Number(body.topLevelFolderLimit);
-    const normalized = Number.isFinite(value) ? Math.min(Math.max(Math.round(value), 3), 50) : DEFAULT_SETTINGS.topLevelFolderLimit;
-    db.setSetting('topLevelFolderLimit', String(normalized));
+    nextTopLevelFolderLimit = Number.isFinite(value)
+      ? Math.min(Math.max(Math.round(value), 3), 50)
+      : DEFAULT_SETTINGS.topLevelFolderLimit;
+    db.setSetting('topLevelFolderLimit', String(nextTopLevelFolderLimit));
   }
 
-  return NextResponse.json({ ok: true });
+  const folderDepthChanged = nextFolderDepth !== currentFolderDepth;
+  const topLevelFolderLimitChanged = nextTopLevelFolderLimit !== currentTopLevelFolderLimit;
+  const topLevelFolderLimitDecreased = topLevelFolderLimitChanged && nextTopLevelFolderLimit < currentTopLevelFolderLimit;
+  const topLevelFolderCount = new Set(
+    db
+      .listFolders()
+      .map((folder) => folder.path.split('/')[0])
+      .filter(Boolean)
+  ).size;
+  const topLevelFolderLimitExceeded = topLevelFolderLimitDecreased && topLevelFolderCount > nextTopLevelFolderLimit;
+  let clearedPendingFolderSuggestions = 0;
+
+  if (folderDepthChanged) {
+    const pendingMoveSuggestions = db.listSuggestions({ status: 'pending', type: 'move', limit: 100000 });
+    clearedPendingFolderSuggestions = pendingMoveSuggestions.total;
+    db.clearPendingSuggestionsByType('move');
+  }
+
+  return NextResponse.json({
+    ok: true,
+    folderDepthChanged,
+    topLevelFolderLimitChanged,
+    topLevelFolderLimitDecreased,
+    topLevelFolderLimitExceeded,
+    topLevelFolderCount,
+    topLevelFolderLimit: nextTopLevelFolderLimit,
+    folderPolicyChanged: folderDepthChanged || topLevelFolderLimitChanged,
+    clearedPendingFolderSuggestions,
+  });
 }

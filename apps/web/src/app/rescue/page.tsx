@@ -87,6 +87,9 @@ export default function RescuePage() {
   const [folderDepth, setFolderDepth] = useState<1 | 2>(1);
   const [topLevelFolderLimit, setTopLevelFolderLimit] = useState(10);
   const [savingFolderPolicy, setSavingFolderPolicy] = useState(false);
+  const [bulkAccepting, setBulkAccepting] = useState(false);
+  const [bulkUndoing, setBulkUndoing] = useState(false);
+  const [lastBulkAcceptedIds, setLastBulkAcceptedIds] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
@@ -189,6 +192,7 @@ export default function RescuePage() {
       setSuggestions((prev) => prev.filter((suggestion) => suggestion.id !== id));
       setTotal((count) => Math.max(0, count - 1));
       setNotice('建议已写入本地。涉及 Chrome 的改动会进入同步预览。');
+      setLastBulkAcceptedIds([]);
       notifySuggestionsChanged();
       await fetchChromeSyncNotice();
     } catch (err) {
@@ -207,9 +211,80 @@ export default function RescuePage() {
 
       setSuggestions((prev) => prev.filter((suggestion) => suggestion.id !== id));
       setTotal((count) => Math.max(0, count - 1));
+      setLastBulkAcceptedIds([]);
       notifySuggestionsChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : '忽略建议失败。');
+    }
+  }
+
+  async function acceptAllSuggestions() {
+    if (suggestions.length === 0) return;
+    const confirmed = window.confirm(`接受全部 ${total} 条待审查建议？改动会先写入本地，涉及 Chrome 的项目进入同步预览。`);
+    if (!confirmed) return;
+
+    setBulkAccepting(true);
+    setNotice('');
+    setError('');
+
+    try {
+      const res = await fetch('/api/suggestions/accept-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(filterType ? { type: filterType } : {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? '一键接受失败。');
+
+      const accepted = Number(data.accepted ?? 0);
+      const acceptedIds = Array.isArray(data.acceptedIds)
+        ? data.acceptedIds.map((id: unknown) => String(id)).filter(Boolean)
+        : [];
+      setLastBulkAcceptedIds(acceptedIds);
+      setNotice(accepted > 0
+        ? `已接受 ${accepted} 条建议。需要写回 Chrome 的改动会进入同步预览，可在写回前一键撤回。`
+        : '当前没有可接受的待审查建议。'
+      );
+      await fetchSuggestions();
+      notifySuggestionsChanged();
+      await fetchChromeSyncNotice(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '一键接受失败。');
+    } finally {
+      setBulkAccepting(false);
+    }
+  }
+
+  async function undoAcceptedSuggestions() {
+    setBulkUndoing(true);
+    setNotice('');
+    setError('');
+
+    try {
+      const res = await fetch('/api/suggestions/undo-accepted', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(lastBulkAcceptedIds.length > 0
+          ? { suggestionIds: lastBulkAcceptedIds, includeSynced: true }
+          : {}
+        ),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? '撤回失败。');
+
+      const reverted = Number(data.reverted ?? 0);
+      setLastBulkAcceptedIds([]);
+      setNotice(reverted > 0
+        ? `已撤回 ${reverted} 条已接受建议，改动已恢复为待审查状态。`
+        : '当前没有可撤回的已接受建议。'
+      );
+      await fetchSuggestions();
+      notifySuggestionsChanged();
+      await fetchChromeSyncNotice(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '撤回失败。');
+    } finally {
+      setBulkUndoing(false);
     }
   }
 
@@ -222,6 +297,7 @@ export default function RescuePage() {
     }
     await fetchSuggestions();
     notifySuggestionsChanged();
+    setLastBulkAcceptedIds([]);
     setNotice('当前列表建议已忽略。');
   }
 
@@ -251,7 +327,25 @@ export default function RescuePage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? '保存文件夹策略失败。');
       setTopLevelFolderLimit(normalizedLimit);
-      setNotice('文件夹策略已保存。已有待审查建议仍来自旧策略；请重新生成整理建议后再接受分类建议。');
+      if (data.folderDepthChanged) {
+        await fetchSuggestions();
+        notifySuggestionsChanged();
+        const cleared = Number(data.clearedPendingFolderSuggestions ?? 0);
+        setNotice(cleared > 0
+          ? `文件夹策略已保存，已清空 ${cleared} 条旧分类建议。请重新生成整理建议后再接受分类建议。`
+          : '文件夹策略已保存。请重新生成整理建议，让 AI 按新层级重新判断分类。'
+        );
+      } else if (data.topLevelFolderLimitChanged) {
+        if (data.topLevelFolderLimitExceeded) {
+          setNotice(`一级文件夹上限已保存。当前已有 ${data.topLevelFolderCount} 个一级文件夹，超过新上限 ${data.topLevelFolderLimit}；现有建议不会清空，建议重新整理分类方案或调高上限。`);
+        } else if (data.topLevelFolderLimitDecreased) {
+          setNotice('一级文件夹上限已保存。当前一级文件夹数量未超过新上限，现有建议不需要重新生成。');
+        } else {
+          setNotice('一级文件夹上限已保存。上限变大不会影响现有建议，不需要重新生成。');
+        }
+      } else {
+        setNotice('文件夹策略未变化，现有建议可继续审查。');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存文件夹策略失败。');
     } finally {
@@ -282,12 +376,12 @@ export default function RescuePage() {
         <FlowStep title="4. 同步" text="同步前预览影响，再由插件写回 Chrome。" />
       </div>
 
-      <section className="mb-4 rounded-lg border border-[#dfe6f2] bg-white p-4">
+      <section id="folder-policy" className="mb-4 rounded-lg border border-[#dfe6f2] bg-white p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-sm font-semibold text-[#101828]">AI 文件夹策略</h2>
             <p className="mt-1 text-xs leading-5 text-[#667085]">
-              AI 先参考已有文件夹；不合适才建议新文件夹。默认只建议一级文件夹，开启二级后才允许 “一级/二级”。
+              AI 先参考已有文件夹；不合适才建议新文件夹。切换层级后需重新生成分类建议；二级文件夹不单独设上限。
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
@@ -371,7 +465,7 @@ export default function RescuePage() {
               重新整理分类方案
             </Link>
             <Link
-              href="/settings"
+              href="#folder-policy"
               className="rounded-lg bg-[#d39b21] px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
             >
               调整一级文件夹上限
@@ -386,6 +480,32 @@ export default function RescuePage() {
           <p className="mt-1 text-sm text-muted">接受建议只先写入本地；涉及 Chrome 标题、移动、删除的改动会进入同步预览。</p>
         </section>
       )}
+
+      <div className="mb-4 flex flex-col gap-3 rounded-lg border border-[#dfe6f2] bg-white p-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={acceptAllSuggestions}
+            disabled={bulkAccepting || loading || total === 0}
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#1463ff] px-4 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(20,99,255,0.18)] transition hover:bg-[#0f57e6] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="grid h-5 w-5 place-items-center rounded-full border border-white/75 text-[12px] leading-none">✓</span>
+            {bulkAccepting ? '接受中...' : '一键接受全部建议'}
+          </button>
+          <button
+            type="button"
+            onClick={undoAcceptedSuggestions}
+            disabled={bulkUndoing || (lastBulkAcceptedIds.length === 0 && (syncResult?.count ?? 0) === 0)}
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#d8e1ee] bg-white px-4 text-sm font-semibold text-[#344054] transition hover:border-[#b9c7da] hover:bg-[#f7faff] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="text-base leading-none">↶</span>
+            {bulkUndoing ? '撤回中...' : '一键撤回'}
+          </button>
+        </div>
+        <div className="text-xs text-[#667085]">
+          接受后先写入本地，写回 Chrome 前可撤回。
+        </div>
+      </div>
 
       {total > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">

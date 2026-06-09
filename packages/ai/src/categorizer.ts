@@ -133,6 +133,7 @@ export async function generateTaxonomy(
 - Use clear, short names (1-4 words)
 - Respect folderDepth=${folderDepth}: ${folderDepth === 1 ? 'category names must be single top-level folder names without "/"' : 'category names may be "Top" or "Top/Sub", but use at most two levels and prefer one level unless a subfolder clearly helps'}
 - The number of distinct top-level folders must be <= ${topLevelFolderLimit}
+- When folderDepth=2, subfolders have no separate count limit; the limit applies only to top-level folders
 - Prefer existing folder names from Top original folders when they are meaningful and specific
 - ${langDirective}
 

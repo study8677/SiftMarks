@@ -89,6 +89,7 @@ Folder rules:
 - If folderDepth is 1, target folderPath must be a single folder name without "/".
 - If folderDepth is 2, target folderPath may be "Top/Sub", but prefer one level unless a second level clearly helps.
 - Do not exceed topLevelFolderLimit top-level folders. If the top-level limit is already reached, choose an existing top-level folder or skip the move.
+- When folderDepth is 2, there is no separate subfolder count limit; only top-level folders are capped.
 - If no confident folder can be chosen or proposed, skip the move suggestion.
 
 Only include bookmarks that actually need changes. Skip ones that are already well-organized. If contentPreview and summary are empty, be conservative and use URL/title evidence.
