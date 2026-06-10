@@ -29,6 +29,24 @@ const PROVIDERS = {
     keyPlaceholder: 'sk-xxxxxxxxxxxxxxxx',
     requiresApiKey: true,
   },
+  gemini: {
+    label: 'Gemini',
+    type: 'openai-compatible',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    embeddingModel: 'gemini-embedding-001',
+    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+    keyPlaceholder: 'AIza...',
+    requiresApiKey: true,
+  },
+  grok: {
+    label: 'Grok / xAI',
+    type: 'openai-compatible',
+    baseUrl: 'https://api.x.ai/v1',
+    embeddingModel: '',
+    models: ['grok-4', 'grok-3', 'grok-3-mini'],
+    keyPlaceholder: 'xai-xxxxxxxxxxxxxxxx',
+    requiresApiKey: true,
+  },
   minimax: {
     label: 'MiniMax',
     type: 'openai-compatible',
@@ -311,7 +329,14 @@ async function api(path, options = {}) {
     },
   });
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    let message = `Request failed: ${response.status}`;
+    try {
+      const data = await response.json();
+      message = data.error || data.message || message;
+    } catch {
+      // Keep the HTTP status when the local API does not return JSON.
+    }
+    throw new Error(message);
   }
   return response.json();
 }
@@ -967,7 +992,7 @@ async function testConnection() {
     });
     showStatus('AI 服务连接成功', 'info');
   } catch (err) {
-    const message = err instanceof Error && ['请输入 API Key', '请输入 API 地址', '请输入模型名'].includes(err.message)
+    const message = err instanceof Error
       ? err.message
       : '连接失败，请检查 API Key、模型或服务地址';
     showStatus(message, 'error');

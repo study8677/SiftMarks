@@ -327,6 +327,30 @@ export default function RescuePage() {
     setSyncingChrome(false);
   }
 
+  async function exportChromeFromWeb() {
+    setSyncingChrome(true);
+    setNotice('');
+    setError('');
+
+    try {
+      const res = await fetch('/api/extension/sync-back');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? '导出回 Chrome 失败。');
+
+      const count = Number(data.count ?? 0);
+      const ops = Array.isArray(data.ops) ? data.ops : [];
+      setSyncResult({ count, ops });
+      setNotice(count > 0
+        ? `已准备 ${count} 项待写回 Chrome。网页没有 Chrome 书签权限，请打开 SiftMarks 插件弹窗并点击“安全写回 Chrome”完成写回。`
+        : '当前没有需要导出回 Chrome 的改动。'
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '导出回 Chrome 失败。');
+    } finally {
+      setSyncingChrome(false);
+    }
+  }
+
   async function saveFolderPolicy() {
     setSavingFolderPolicy(true);
     setNotice('');
@@ -501,6 +525,13 @@ export default function RescuePage() {
 
       <section className="mb-4 flex flex-col gap-3 rounded-xl border border-[#dfe6f2] bg-white px-5 py-4 shadow-[0_1px_2px_rgba(16,24,40,0.03)] md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap gap-2">
+          <Link
+            href="/import"
+            className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#1463ff] bg-white px-4 text-sm font-bold text-[#1463ff] transition hover:bg-[#eef4ff]"
+          >
+            <RescueIcon name="download" className="h-4 w-4" />
+            导入书签
+          </Link>
           <button
             type="button"
             onClick={acceptAllSuggestions}
@@ -518,6 +549,15 @@ export default function RescuePage() {
           >
             <RescueIcon name="undo" className="h-4 w-4" />
             {bulkUndoing ? '撤回中...' : '一键撤回'}
+          </button>
+          <button
+            type="button"
+            onClick={exportChromeFromWeb}
+            disabled={syncingChrome}
+            className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#1463ff] bg-[#eef4ff] px-4 text-sm font-bold text-[#1463ff] transition hover:bg-[#dce9ff] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RescueIcon name="upload" className="h-4 w-4" />
+            {syncingChrome ? '准备中...' : '导出回 Chrome'}
           </button>
         </div>
         <div className="text-sm text-[#667085]">
@@ -581,7 +621,7 @@ export default function RescuePage() {
           <p className="mt-1 text-sm text-muted">这里只预览待写回影响；预览不会修改 Chrome。</p>
           {syncResult.count > 0 && (
             <>
-              <p className="mt-1 text-sm text-muted">真正写入 Chrome 仍需在 SiftMarks 插件弹窗点击“安全写回 Chrome”。</p>
+              <p className="mt-1 text-sm text-muted">真正写入 Chrome 仍需在 SiftMarks 插件弹窗点击“导出回 Chrome / 安全写回 Chrome”。</p>
               <div className="mt-3 space-y-2">
                 {syncResult.ops.map((op) => (
                   <div key={op.id} className="rounded-lg border border-[#b9d3ff] bg-white/85 px-3 py-2 text-sm">
@@ -711,7 +751,7 @@ function Metric({ label, value }: { label: string; value: number }) {
   );
 }
 
-type RescueIconName = 'check' | 'eye' | 'inbox' | 'sparkles' | 'undo';
+type RescueIconName = 'check' | 'download' | 'eye' | 'inbox' | 'sparkles' | 'undo' | 'upload';
 
 function RescueIcon({ name, className = '' }: { name: RescueIconName; className?: string }) {
   return (
@@ -737,6 +777,14 @@ function rescueIconPath(name: RescueIconName) {
         <>
           <circle cx="12" cy="12" r="9" />
           <path d="m8 12 2.5 2.5L16 9" />
+        </>
+      );
+    case 'download':
+      return (
+        <>
+          <path d="M12 3v12" />
+          <path d="m7 10 5 5 5-5" />
+          <path d="M5 21h14" />
         </>
       );
     case 'eye':
@@ -766,6 +814,14 @@ function rescueIconPath(name: RescueIconName) {
         <>
           <path d="M9 14 4 9l5-5" />
           <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
+        </>
+      );
+    case 'upload':
+      return (
+        <>
+          <path d="M12 3v12" />
+          <path d="m7 8 5-5 5 5" />
+          <path d="M5 21h14" />
         </>
       );
   }

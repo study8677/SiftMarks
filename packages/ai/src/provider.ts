@@ -23,6 +23,51 @@ export interface AITagOptions {
   maxTags?: number;
 }
 
+function compactErrorDetail(value: unknown): string {
+  if (!value) return '';
+
+  if (typeof value === 'string') {
+    return value.replace(/\s+/g, ' ').trim().slice(0, 240);
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, any>;
+    const nested = record.error;
+
+    if (typeof nested === 'string') return compactErrorDetail(nested);
+    if (nested && typeof nested === 'object') {
+      return compactErrorDetail(nested.message ?? nested.type ?? nested.code ?? nested);
+    }
+
+    return compactErrorDetail(record.message ?? record.detail ?? JSON.stringify(value));
+  }
+
+  return String(value).slice(0, 240);
+}
+
+async function openAICompatibleError(response: Response, requestUrl: string): Promise<Error> {
+  let detail = '';
+
+  try {
+    detail = compactErrorDetail(await response.clone().json());
+  } catch {
+    try {
+      const text = await response.text();
+      const title = text.match(/<title[^>]*>(.*?)<\/title>/is)?.[1];
+      detail = compactErrorDetail(title ?? text.replace(/<[^>]*>/g, ' '));
+    } catch {
+      detail = '';
+    }
+  }
+
+  const hint = response.status === 404
+    ? '。请确认 API 地址是否填到 OpenAI 兼容接口前缀（常见是 /v1），如果地址已经包含 /v1，再检查模型名是否存在'
+    : '';
+  const detailText = detail ? `。服务返回：${detail}` : '';
+
+  return new Error(`AI request failed: ${response.status}${hint}。请求路径：${requestUrl}${detailText}`);
+}
+
 // --- Mock Provider ---
 
 export class MockProvider implements AIProvider {
@@ -69,11 +114,12 @@ export class OpenAICompatibleProvider implements AIProvider {
     this.baseUrl = (config.baseUrl ?? 'https://api.openai.com/v1').replace(/\/$/, '');
     this.apiKey = config.apiKey ?? '';
     this.chatModel = config.chatModel ?? 'gpt-4o-mini';
-    this.embeddingModel = config.embeddingModel ?? 'text-embedding-3-small';
+    this.embeddingModel = config.embeddingModel?.trim() ?? '';
   }
 
   async chat(messages: Array<{ role: string; content: string }>): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const requestUrl = `${this.baseUrl}/chat/completions`;
+    const response = await fetch(requestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -88,7 +134,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     });
 
     if (!response.ok) {
-      throw new Error(`AI request failed: ${response.status}`);
+      throw await openAICompatibleError(response, requestUrl);
     }
 
     const data = (await response.json()) as any;
@@ -181,7 +227,10 @@ export class OpenAICompatibleProvider implements AIProvider {
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
-    const response = await fetch(`${this.baseUrl}/embeddings`, {
+    if (!this.embeddingModel) return [];
+
+    const requestUrl = `${this.baseUrl}/embeddings`;
+    const response = await fetch(requestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -194,7 +243,7 @@ export class OpenAICompatibleProvider implements AIProvider {
     });
 
     if (!response.ok) {
-      throw new Error(`Embedding request failed: ${response.status}`);
+      throw await openAICompatibleError(response, requestUrl);
     }
 
     const data = (await response.json()) as any;

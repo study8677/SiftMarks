@@ -226,6 +226,21 @@ function inferProviderId(config: AIProviderConfig): string {
   return PROVIDERS.find((provider) => provider.type === config.type && provider.baseUrl.replace(/\/$/, '') === baseUrl)?.id ?? 'custom';
 }
 
+function suggestedOpenAIBaseUrl(baseUrl: string): string | null {
+  const raw = baseUrl.trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    const hasOnlyOrigin = url.pathname === '/' && !url.search && !url.hash;
+    if (!hasOnlyOrigin || !['http:', 'https:'].includes(url.protocol)) return null;
+
+    return `${url.origin}/v1`;
+  } catch {
+    return null;
+  }
+}
+
 export default function SettingsPage() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -254,6 +269,9 @@ export default function SettingsPage() {
     settings.aiProvider.baseUrl?.replace(/\/$/, '') === baseUrl.replace(/\/$/, '')
   );
 
+  const baseUrlSuggestion = selectedProvider.type === 'openai-compatible'
+    ? suggestedOpenAIBaseUrl(baseUrl)
+    : null;
   const hasRequiredCredential = !selectedProvider.requiresApiKey || Boolean(apiKey.trim()) || canReuseSavedKey;
   const isReady = Boolean(baseUrl.trim() && chatModel.trim() && hasRequiredCredential);
 
@@ -459,12 +477,19 @@ export default function SettingsPage() {
 
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           <Field label="API 地址">
-            <input
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.target.value)}
-              placeholder={selectedProvider.type === 'ollama-compatible' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
-              className="h-10 w-full rounded-lg border border-[#dfe6f2] bg-[#fbfdff] px-3 text-sm outline-none focus:border-[#1463ff]"
-            />
+            <>
+              <input
+                value={baseUrl}
+                onChange={(event) => setBaseUrl(event.target.value)}
+                placeholder={selectedProvider.type === 'ollama-compatible' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
+                className="h-10 w-full rounded-lg border border-[#dfe6f2] bg-[#fbfdff] px-3 text-sm outline-none focus:border-[#1463ff]"
+              />
+              {baseUrlSuggestion && (
+                <p className="mt-2 text-xs leading-5 text-[#b54708]">
+                  这个地址看起来像服务首页。OpenAI 兼容接口通常要填到接口前缀，例如 {baseUrlSuggestion}。
+                </p>
+              )}
+            </>
           </Field>
 
           {selectedProvider.requiresApiKey && (
@@ -515,7 +540,7 @@ export default function SettingsPage() {
           </button>
           {saved && <span className="text-sm font-medium text-[#157347]">已保存</span>}
           {testResult && (
-            <span className={`text-sm font-medium ${testResult.ok ? 'text-[#157347]' : 'text-[#b42318]'}`}>
+            <span className={`max-w-full break-words text-sm font-medium ${testResult.ok ? 'text-[#157347]' : 'text-[#b42318]'}`}>
               {testResult.message}
             </span>
           )}
