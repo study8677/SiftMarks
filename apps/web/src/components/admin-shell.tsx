@@ -126,21 +126,21 @@ export function AdminShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="min-h-screen lg:pl-[204px]">
-        <header className="sticky top-0 z-10 flex h-[62px] items-center justify-between border-b border-[#e5eaf3] bg-white/95 px-4 backdrop-blur md:px-6">
-          <form onSubmit={submitSearch} className="flex w-full max-w-[520px] items-center gap-2 rounded-lg border border-[#dfe6f2] bg-white px-3 py-2 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
-            <ShellIcon name="search" className="h-4 w-4 text-[#344054]" />
+        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-[#e5eaf3] bg-white/95 px-4 backdrop-blur md:px-6">
+          <form onSubmit={submitSearch} className="flex h-12 w-full max-w-[600px] items-center gap-3 rounded-2xl border border-[#dfe6f2] bg-white px-5 shadow-[0_8px_20px_rgba(16,24,40,0.05)]">
+            <ShellIcon name="search" className="h-5 w-5 text-[#667085]" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="不记得标题？搜它是干什么的..."
-              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[#98a2b3]"
+              placeholder="搜索书签、文件夹或标签..."
+              className="min-w-0 flex-1 bg-transparent text-base font-medium outline-none placeholder:text-[#98a2b3]"
             />
-            <span className="rounded-md border border-[#d8e0ed] px-1.5 py-0.5 text-[11px] text-[#667085]">⌘ K</span>
+            <span className="rounded-lg border border-[#e5eaf3] bg-[#f8fafc] px-2.5 py-1 text-sm font-semibold text-[#667085]">⌘ K</span>
           </form>
 
           <div className="ml-4 flex shrink-0 items-center gap-3">
-            <Link href="/import" className="hidden h-9 items-center gap-2 rounded-lg border border-[#dfe6f2] bg-white px-3 text-sm font-medium text-[#172033] shadow-[0_1px_2px_rgba(16,24,40,0.04)] hover:border-[#b9c7dc] sm:flex">
-              <ShellIcon name="download" className="h-4 w-4" />
+            <Link href="/import" className="hidden h-12 items-center gap-3 rounded-2xl bg-[#1463ff] px-5 text-base font-bold text-white shadow-[0_10px_22px_rgba(20,99,255,0.2)] hover:bg-[#0f57e6] sm:flex">
+              <ShellIcon name="download" className="h-5 w-5" />
               导入书签
             </Link>
           </div>

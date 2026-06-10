@@ -1489,9 +1489,6 @@
     #editView .subtitle,
     #editView .edit-subtitle,
     #editView .compact-hidden-field,
-    #editView .common-label,
-    #editView .common-tags,
-    #editView .ai-tag-hint,
     #editView .edit-action-row {
       display: none;
     }
@@ -1573,15 +1570,65 @@
     }
 
     #editView .tag-box {
-      min-height: 136px;
+      min-height: 120px;
       padding: 10px;
       border-radius: 13px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #editView .tag-box-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    #editView .tag-box-title {
+      color: #101828;
+      font-size: 14px;
+      font-weight: 850;
+      line-height: 1.2;
+    }
+
+    #editView .tag-limit {
+      display: inline-flex;
+      min-height: 24px;
+      align-items: center;
+      justify-content: center;
+      padding: 0 9px;
+      color: #0f5fff;
+      font-size: 12px;
+      font-weight: 900;
+      background: #eef5ff;
+      border-radius: 999px;
+    }
+
+    #editView .tag-empty-hint {
+      color: #667085;
+      font-size: 13px;
+      font-weight: 650;
+      line-height: 1.25;
+      min-height: 27px;
+      display: flex;
+      align-items: center;
+    }
+
+    #editView .tag-chip-row[hidden],
+    #editView .tag-empty-hint[hidden],
+    #editView .tag-suggestion-row[hidden] {
+      display: none;
+    }
+
+    #editView .tag-input-row {
+      position: relative;
     }
 
     #editView .tag-chip-row {
       flex-wrap: nowrap;
       gap: 7px;
-      min-height: 29px;
+      min-height: 28px;
       overflow: hidden;
     }
 
@@ -1600,10 +1647,57 @@
 
     #editView .tag-input {
       height: 39px;
-      margin-top: 9px;
+      margin-top: 0;
       padding: 0 12px;
       font-size: 15px;
       border-radius: 10px;
+    }
+
+    #editView .tag-suggestion-row {
+      display: flex;
+      min-height: 27px;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    #editView .common-label {
+      flex: 0 0 auto;
+      margin: 0;
+      color: #667085;
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    #editView .common-tags {
+      display: flex;
+      flex: 1 1 auto;
+      flex-wrap: nowrap;
+      gap: 6px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    #editView .common-tag {
+      max-width: 86px;
+      min-height: 25px;
+      padding: 0 8px;
+      overflow: hidden;
+      color: #475467;
+      font-size: 12px;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      background: #f7fbff;
+      border-radius: 8px;
+    }
+
+    #editView .ai-tag-hint {
+      margin-top: 0;
+      color: #667085;
+      font-size: 12px;
+      font-weight: 650;
+      line-height: 1.15;
     }
 
     #editView .edit-footer {
@@ -2344,11 +2438,20 @@
           <div class="form-group">
             <label class="form-label" for="editTagInput">标签</label>
             <div class="tag-box">
+              <div class="tag-box-head">
+                <span class="tag-box-title">辅助搜索</span>
+                <span class="tag-limit" id="tagLimitText">已选 0/3</span>
+              </div>
               <div id="tagChipRow" class="tag-chip-row"></div>
-              <input id="editTagInput" class="tag-input" type="text" autocomplete="off" placeholder="添加标签，最多 3 个" />
-              <div class="common-label">常用标签</div>
-              <div id="commonTagRow" class="common-tags"></div>
-              <div class="ai-tag-hint">✧ 可基于网页内容重新生成标签</div>
+              <div class="tag-empty-hint" id="tagEmptyHint">标签用于辅助搜索，不影响文件夹分类。</div>
+              <div class="tag-input-row">
+                <input id="editTagInput" class="tag-input" type="text" autocomplete="off" placeholder="输入后按回车添加" />
+              </div>
+              <div class="tag-suggestion-row" id="tagSuggestionRow">
+                <div class="common-label">常用</div>
+                <div id="commonTagRow" class="common-tags"></div>
+              </div>
+              <div class="ai-tag-hint">优先复用已有标签，最多保留 3 个。</div>
             </div>
           </div>
 

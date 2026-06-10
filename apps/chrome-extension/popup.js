@@ -241,6 +241,9 @@ const els = {
   editUrlInput: document.getElementById('editUrlInput'),
   editFolderSelect: document.getElementById('editFolderSelect'),
   tagChipRow: document.getElementById('tagChipRow'),
+  tagLimitText: document.getElementById('tagLimitText'),
+  tagEmptyHint: document.getElementById('tagEmptyHint'),
+  tagSuggestionRow: document.getElementById('tagSuggestionRow'),
   editTagInput: document.getElementById('editTagInput'),
   commonTagRow: document.getElementById('commonTagRow'),
   editSummaryInput: document.getElementById('editSummaryInput'),
@@ -660,6 +663,9 @@ function populateFolderSelect(selectedFolder) {
 }
 
 function renderTagChips() {
+  els.tagLimitText.textContent = `已选 ${editTags.length}/${MAX_EDIT_TAGS}`;
+  els.tagChipRow.hidden = editTags.length === 0;
+  els.tagEmptyHint.hidden = editTags.length > 0;
   els.tagChipRow.innerHTML = editTags.map((tag) => `
     <span class="tag-chip">
       <span class="tag-chip-label">${escapeHtml(tag)}</span>
@@ -670,6 +676,7 @@ function renderTagChips() {
   const common = dedupeNames(knownTags)
     .filter((tag) => !editTags.some((current) => current.toLowerCase() === tag.toLowerCase()))
     .slice(0, Math.max(0, MAX_EDIT_TAGS - editTags.length));
+  els.tagSuggestionRow.hidden = common.length === 0;
   els.commonTagRow.innerHTML = common.map((tag) => `
     <button class="common-tag" type="button" data-add-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>
   `).join('');

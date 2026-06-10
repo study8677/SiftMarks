@@ -37,7 +37,7 @@ export async function POST(
   };
 
   db.updateBookmark(id, baseUpdate);
-  let bookmark = db.getBookmarkById(id) ?? existing;
+  const bookmark = db.getBookmarkById(id) ?? existing;
   let summary: string | null = bookmark.summary;
   let tags = db.getBookmarkTags(id).map((tag) => tag.name);
   const aiPowered = provider.name !== 'mock';

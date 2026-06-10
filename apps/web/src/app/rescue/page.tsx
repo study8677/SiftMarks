@@ -76,7 +76,9 @@ function notifySuggestionsChanged() {
 
 export default function RescuePage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [allSuggestions, setAllSuggestions] = useState<Suggestion[]>([]);
   const [total, setTotal] = useState(0);
+  const [visibleTotal, setVisibleTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
@@ -99,10 +101,19 @@ export default function RescuePage() {
     if (filterType) params.set('type', filterType);
 
     try {
-      const res = await fetch(`/api/suggestions?${params}`);
-      const data = await res.json();
+      const allParams = new URLSearchParams({ status: 'pending', limit: '100000' });
+      const [res, allRes] = await Promise.all([
+        fetch(`/api/suggestions?${params}`),
+        fetch(`/api/suggestions?${allParams}`),
+      ]);
+      const [data, allData] = await Promise.all([
+        res.json(),
+        allRes.json(),
+      ]);
       setSuggestions(data.items ?? []);
-      setTotal(data.total ?? 0);
+      setAllSuggestions(allData.items ?? []);
+      setVisibleTotal(data.total ?? 0);
+      setTotal(allData.total ?? 0);
       setHasScanned(true);
       setError('');
     } catch {
@@ -145,11 +156,11 @@ export default function RescuePage() {
 
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const suggestion of suggestions) {
+    for (const suggestion of allSuggestions) {
       counts.set(suggestion.type, (counts.get(suggestion.type) ?? 0) + 1);
     }
     return counts;
-  }, [suggestions]);
+  }, [allSuggestions]);
 
   async function runRescue() {
     setScanning(true);
@@ -190,6 +201,8 @@ export default function RescuePage() {
       if (!res.ok) throw new Error(data.error ?? '接受建议失败。');
 
       setSuggestions((prev) => prev.filter((suggestion) => suggestion.id !== id));
+      setAllSuggestions((prev) => prev.filter((suggestion) => suggestion.id !== id));
+      setVisibleTotal((count) => Math.max(0, count - 1));
       setTotal((count) => Math.max(0, count - 1));
       setNotice('建议已写入本地。涉及 Chrome 的改动会进入同步预览。');
       setLastBulkAcceptedIds([]);
@@ -210,6 +223,8 @@ export default function RescuePage() {
       if (!res.ok) throw new Error(data.error ?? '忽略建议失败。');
 
       setSuggestions((prev) => prev.filter((suggestion) => suggestion.id !== id));
+      setAllSuggestions((prev) => prev.filter((suggestion) => suggestion.id !== id));
+      setVisibleTotal((count) => Math.max(0, count - 1));
       setTotal((count) => Math.max(0, count - 1));
       setLastBulkAcceptedIds([]);
       notifySuggestionsChanged();
@@ -219,8 +234,13 @@ export default function RescuePage() {
   }
 
   async function acceptAllSuggestions() {
-    if (suggestions.length === 0) return;
-    const confirmed = window.confirm(`接受全部 ${total} 条待审查建议？改动会先写入本地，涉及 Chrome 的项目进入同步预览。`);
+    if (visibleTotal === 0) {
+      setNotice('当前没有可接受的待审查建议。');
+      setError('');
+      return;
+    }
+    const targetCount = filterType ? visibleTotal : total;
+    const confirmed = window.confirm(`接受全部 ${targetCount} 条待审查建议？改动会先写入本地，涉及 Chrome 的项目进入同步预览。`);
     if (!confirmed) return;
 
     setBulkAccepting(true);
@@ -354,47 +374,45 @@ export default function RescuePage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="mb-6 flex items-start justify-between gap-4">
+    <div className="mx-auto max-w-[1380px] pb-6">
+      <header className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#101828]">整理建议</h1>
-          <p className="mt-1 text-sm text-muted">书签管家会定期发现坏链、空标题、缺摘要和分类问题；AI 只给建议，不会绕过你直接改 Chrome。</p>
+          <h1 className="text-[26px] font-bold tracking-tight text-[#101828]">整理建议</h1>
+          <p className="mt-1 max-w-[820px] text-sm leading-6 text-[#667085]">
+            书签管家会定期发现坏链、空标题、缺摘要和分类问题；AI 只给建议，不会绕过你直接改 Chrome。
+          </p>
         </div>
         <button
           onClick={runRescue}
           disabled={scanning}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+          className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#1463ff] px-4 text-sm font-bold text-white shadow-[0_8px_18px_rgba(20,99,255,0.2)] transition hover:bg-[#0f57e6] disabled:cursor-not-allowed disabled:opacity-50"
         >
+          <RescueIcon name="sparkles" className="h-4 w-4" />
           {scanning ? '扫描中...' : '生成整理建议'}
         </button>
-      </div>
+      </header>
 
-      <div className="mb-5 grid gap-3 md:grid-cols-4">
-        <FlowStep title="1. 保存" text="平时用扩展或导入把书签进入本地库。" />
-        <FlowStep title="2. 找回" text="用标题、标签、摘要、正文和智能搜索找回。" />
-        <FlowStep title="3. 整理" text="定期处理坏链、空标题和分类问题。" />
-        <FlowStep title="4. 同步" text="同步前预览影响，再由插件写回 Chrome。" />
-      </div>
-
-      <section id="folder-policy" className="mb-4 rounded-lg border border-[#dfe6f2] bg-white p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <section id="folder-policy" className="mb-4 rounded-xl border border-[#dfe6f2] bg-white px-5 py-5 shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-center">
           <div>
-            <h2 className="text-sm font-semibold text-[#101828]">AI 文件夹策略</h2>
-            <p className="mt-1 text-xs leading-5 text-[#667085]">
+            <h2 className="text-base font-bold tracking-tight text-[#101828]">AI 文件夹策略</h2>
+            <p className="mt-2 max-w-[760px] text-sm leading-6 text-[#667085]">
               AI 先参考已有文件夹；不合适才建议新文件夹。切换层级后需重新生成分类建议；二级文件夹不单独设上限。
             </p>
           </div>
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:justify-end">
             <div>
-              <div className="mb-1.5 text-xs font-semibold text-[#667085]">层级</div>
-              <div className="inline-flex rounded-lg border border-[#dfe6f2] bg-white p-1">
+              <div className="mb-2 text-xs font-semibold text-[#667085]">层级</div>
+              <div className="inline-flex rounded-lg border border-[#dfe6f2] bg-[#f8fafc] p-1">
                 {[1, 2].map((depth) => (
                   <button
                     key={depth}
                     type="button"
                     onClick={() => setFolderDepth(depth as 1 | 2)}
-                    className={`h-8 rounded-md px-3 text-xs font-semibold ${
-                      folderDepth === depth ? 'bg-[#1463ff] text-white' : 'text-[#667085] hover:text-[#101828]'
+                    className={`h-9 min-w-16 rounded-md px-3 text-sm font-bold transition ${
+                      folderDepth === depth
+                        ? 'bg-[#1463ff] text-white shadow-[0_8px_18px_rgba(20,99,255,0.22)]'
+                        : 'text-[#667085] hover:bg-white hover:text-[#101828]'
                     }`}
                   >
                     {depth === 1 ? '一级' : '二级'}
@@ -403,21 +421,21 @@ export default function RescuePage() {
               </div>
             </div>
             <label className="block">
-              <div className="mb-1.5 text-xs font-semibold text-[#667085]">一级文件夹上限</div>
+              <div className="mb-2 text-xs font-semibold text-[#667085]">一级文件夹上限</div>
               <input
                 type="number"
                 min={3}
                 max={50}
                 value={topLevelFolderLimit}
                 onChange={(event) => setTopLevelFolderLimit(Number(event.target.value))}
-                className="h-10 w-28 rounded-lg border border-[#dfe6f2] bg-white px-3 text-sm outline-none focus:border-[#1463ff]"
+                className="h-10 w-28 rounded-lg border border-[#dfe6f2] bg-white px-3 text-sm text-[#101828] outline-none transition focus:border-[#1463ff] focus:ring-4 focus:ring-[#1463ff]/10"
               />
             </label>
             <button
               type="button"
               onClick={saveFolderPolicy}
               disabled={savingFolderPolicy}
-              className="h-10 rounded-lg border border-[#b9d3ff] bg-white px-4 text-sm font-semibold text-[#1463ff] disabled:opacity-50"
+              className="h-10 rounded-lg border border-[#1463ff] bg-white px-4 text-sm font-bold text-[#1463ff] transition hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {savingFolderPolicy ? '保存中...' : '保存策略'}
             </button>
@@ -434,8 +452,8 @@ export default function RescuePage() {
       )}
 
       {scanResult?.analysis && (
-        <section className="mb-4 rounded-lg border border-[#dfe6f2] bg-white p-4 text-sm text-[#344054]">
-          <div className="font-semibold text-[#101828]">本次整理扫描</div>
+        <section className="mb-4 rounded-xl border border-[#dfe6f2] bg-white p-4 text-sm text-[#344054] shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
+          <div className="font-bold text-[#101828]">本次整理扫描</div>
           <div className="mt-2 grid gap-2 md:grid-cols-6">
             <Metric label="分析书签" value={scanResult.analysis.processed} />
             <Metric label="抓到正文" value={scanResult.analysis.fetched} />
@@ -451,7 +469,7 @@ export default function RescuePage() {
       )}
 
       {scanResult?.folderPolicy?.willReachLimit && (
-        <section className="mb-4 rounded-lg border border-[#f2d06b] bg-[#fff9e6] p-4 text-sm text-[#7a4b00]">
+        <section className="mb-4 rounded-xl border border-[#f2d06b] bg-[#fff9e6] p-4 text-sm text-[#7a4b00]">
           <div className="font-semibold text-[#5f3b00]">一级文件夹已达到上限</div>
           <p className="mt-1 leading-6">
             {scanResult.folderPolicy.message}
@@ -475,43 +493,43 @@ export default function RescuePage() {
       )}
 
       {hasScanned && total > 0 && (
-        <section className="mb-4 rounded-lg border border-warning/20 bg-warning-light p-4">
-          <p className="font-medium">待审查建议：{total} 条</p>
+        <section className="mb-4 rounded-xl border border-warning/20 bg-warning-light p-4">
+          <p className="text-sm font-medium">待审查建议：{total} 条</p>
           <p className="mt-1 text-sm text-muted">接受建议只先写入本地；涉及 Chrome 标题、移动、删除的改动会进入同步预览。</p>
         </section>
       )}
 
-      <div className="mb-4 flex flex-col gap-3 rounded-lg border border-[#dfe6f2] bg-white p-3 md:flex-row md:items-center md:justify-between">
+      <section className="mb-4 flex flex-col gap-3 rounded-xl border border-[#dfe6f2] bg-white px-5 py-4 shadow-[0_1px_2px_rgba(16,24,40,0.03)] md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={acceptAllSuggestions}
-            disabled={bulkAccepting || loading || total === 0}
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#1463ff] px-4 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(20,99,255,0.18)] transition hover:bg-[#0f57e6] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={bulkAccepting || loading}
+            className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#1463ff] px-4 text-sm font-bold text-white shadow-[0_8px_18px_rgba(20,99,255,0.2)] transition hover:bg-[#0f57e6] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="grid h-5 w-5 place-items-center rounded-full border border-white/75 text-[12px] leading-none">✓</span>
+            <RescueIcon name="check" className="h-4 w-4" />
             {bulkAccepting ? '接受中...' : '一键接受全部建议'}
           </button>
           <button
             type="button"
             onClick={undoAcceptedSuggestions}
             disabled={bulkUndoing || (lastBulkAcceptedIds.length === 0 && (syncResult?.count ?? 0) === 0)}
-            className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#d8e1ee] bg-white px-4 text-sm font-semibold text-[#344054] transition hover:border-[#b9c7da] hover:bg-[#f7faff] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#d8e1ee] bg-white px-4 text-sm font-bold text-[#667085] transition hover:border-[#b9c7da] hover:bg-[#f7faff] hover:text-[#344054] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="text-base leading-none">↶</span>
+            <RescueIcon name="undo" className="h-4 w-4" />
             {bulkUndoing ? '撤回中...' : '一键撤回'}
           </button>
         </div>
-        <div className="text-xs text-[#667085]">
+        <div className="text-sm text-[#667085]">
           接受后先写入本地，写回 Chrome 前可撤回。
         </div>
-      </div>
+      </section>
 
       {total > 0 && (
         <div className="mb-4 flex flex-wrap gap-2">
           <button
             onClick={() => setFilterType(null)}
-            className={`rounded-md px-3 py-1 text-sm ${!filterType ? 'bg-accent text-white' : 'border border-border text-muted'}`}
+            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${!filterType ? 'bg-accent text-white' : 'border border-border bg-white text-muted'}`}
           >
             全部 ({total})
           </button>
@@ -519,7 +537,7 @@ export default function RescuePage() {
             <button
               key={type}
               onClick={() => setFilterType(type)}
-              className={`rounded-md px-3 py-1 text-sm ${filterType === type ? 'bg-accent text-white' : 'border border-border text-muted'}`}
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${filterType === type ? 'bg-accent text-white' : 'border border-border bg-white text-muted'}`}
             >
               {typeLabels[type] ?? type} ({count})
             </button>
@@ -527,34 +545,37 @@ export default function RescuePage() {
         </div>
       )}
 
-      <div className="mb-4 rounded-lg border border-[#dfe6f2] bg-white p-3">
+      <section className="mb-4 rounded-xl border border-[#dfe6f2] bg-white px-5 py-4 shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="text-sm text-[#475467]">
+          <div className="flex items-center gap-3 text-sm leading-6 text-[#475467]">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#f2f4f7] text-[#344054]">
+              <RescueIcon name="eye" className="h-5 w-5" />
+            </span>
             接受后的改名、移动、删除，以及本地已分类但未写入 Chrome 的书签，会先留在同步计划里。
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={previewChromeSync}
               disabled={syncingChrome}
-              className="rounded-lg border border-accent px-4 py-2 text-sm font-medium text-accent transition hover:bg-accent-light disabled:opacity-50"
+              className="h-10 rounded-lg border border-accent bg-white px-4 text-sm font-bold text-accent transition hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-50"
             >
               {syncingChrome ? '读取中...' : '预览待写回 Chrome'}
             </button>
             {suggestions.length > 0 && (
               <button
                 onClick={dismissVisibleSuggestions}
-                className="rounded-lg border border-border px-4 py-2 text-sm text-muted transition hover:border-danger hover:text-foreground"
+                className="h-10 rounded-lg border border-border bg-white px-4 text-sm font-semibold text-muted transition hover:border-danger hover:text-foreground"
               >
                 忽略当前列表
               </button>
             )}
           </div>
         </div>
-      </div>
+      </section>
 
       {syncResult && (
-        <section className="mb-4 rounded-lg border border-accent/20 bg-accent-light p-4">
-          <p className="font-semibold">
+        <section className="mb-4 rounded-xl border border-accent/20 bg-accent-light p-4">
+          <p className="text-sm font-semibold">
             {syncResult.count > 0 ? `有 ${syncResult.count} 项 Chrome 改动等待插件写回。` : '当前没有需要写回 Chrome 的改动。'}
           </p>
           <p className="mt-1 text-sm text-muted">这里只预览待写回影响；预览不会修改 Chrome。</p>
@@ -578,13 +599,11 @@ export default function RescuePage() {
       )}
 
       {loading ? (
-        <div className="animate-pulse text-muted">加载中...</div>
+        <div className="rounded-xl border border-dashed border-[#cbd5e1] bg-white py-12 text-center text-sm text-muted animate-pulse">加载中...</div>
       ) : suggestions.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-card py-12 text-center text-muted">
-          {hasScanned ? '当前没有待审查建议。' : '点击“生成整理建议”开始检查书签库。'}
-        </div>
+        <EmptySuggestionState hasScanned={hasScanned} />
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {suggestions.map((suggestion) => (
             <SuggestionCard
               key={suggestion.id}
@@ -612,8 +631,8 @@ function SuggestionCard({
   const after = parseJSON(suggestion.afterJson);
 
   return (
-    <article className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-4">
+    <article className="rounded-lg border border-border bg-card p-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <span className={`rounded px-2 py-0.5 text-xs font-medium ${
@@ -664,11 +683,21 @@ function SuggestionCard({
   );
 }
 
-function FlowStep({ title, text }: { title: string; text: string }) {
+function EmptySuggestionState({ hasScanned }: { hasScanned: boolean }) {
   return (
-    <div className="rounded-lg border border-[#dfe6f2] bg-white p-3">
-      <div className="text-sm font-bold text-[#101828]">{title}</div>
-      <div className="mt-1 text-xs leading-5 text-[#667085]">{text}</div>
+    <div className="grid min-h-[150px] place-items-center rounded-xl border border-dashed border-[#cbd5e1] bg-white px-5 py-8 text-center">
+      <div>
+        <div className="relative mx-auto h-16 w-24">
+          <RescueIcon name="sparkles" className="absolute left-2 top-1 h-4 w-4 text-[#b7c7e6]" />
+          <RescueIcon name="sparkles" className="absolute right-4 top-6 h-3.5 w-3.5 text-[#b7c7e6]" />
+          <div className="absolute left-1/2 top-4 grid h-12 w-14 -translate-x-1/2 place-items-center rounded-xl bg-[#e6edf8] text-[#9aaccc] shadow-[0_8px_18px_rgba(118,137,169,0.16)]">
+            <RescueIcon name="inbox" className="h-7 w-7" />
+          </div>
+        </div>
+        <div className="mt-2 text-base font-bold text-[#667085]">
+          {hasScanned ? '当前没有待审查建议。' : '点击“生成整理建议”开始检查书签库。'}
+        </div>
+      </div>
     </div>
   );
 }
@@ -676,10 +705,70 @@ function FlowStep({ title, text }: { title: string; text: string }) {
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md bg-[#fbfdff] px-3 py-2">
-      <div className="text-base font-bold text-[#101828]">{value}</div>
+      <div className="text-sm font-bold text-[#101828]">{value}</div>
       <div className="mt-0.5 text-xs text-[#667085]">{label}</div>
     </div>
   );
+}
+
+type RescueIconName = 'check' | 'eye' | 'inbox' | 'sparkles' | 'undo';
+
+function RescueIcon({ name, className = '' }: { name: RescueIconName; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {rescueIconPath(name)}
+    </svg>
+  );
+}
+
+function rescueIconPath(name: RescueIconName) {
+  switch (name) {
+    case 'check':
+      return (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="m8 12 2.5 2.5L16 9" />
+        </>
+      );
+    case 'eye':
+      return (
+        <>
+          <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+          <circle cx="12" cy="12" r="3" />
+        </>
+      );
+    case 'inbox':
+      return (
+        <>
+          <path d="M5 6h14l2 8v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4l2-8Z" />
+          <path d="M3 14h5l1.5 2h5L16 14h5" />
+        </>
+      );
+    case 'sparkles':
+      return (
+        <>
+          <path d="M12 3 14 9l6 2-6 2-2 6-2-6-6-2 6-2 2-6Z" />
+          <path d="M19 3v4" />
+          <path d="M21 5h-4" />
+        </>
+      );
+    case 'undo':
+      return (
+        <>
+          <path d="M9 14 4 9l5-5" />
+          <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
+        </>
+      );
+  }
 }
 
 function parseJSON(value: string): Record<string, unknown> {
