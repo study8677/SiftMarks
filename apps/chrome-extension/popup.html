@@ -2055,47 +2055,42 @@
       line-height: 1.2;
     }
 
-    .safety-toggle {
+    .writeback-action {
       display: inline-flex;
+      height: 34px;
       align-items: center;
-      gap: 9px;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 12px;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+      white-space: nowrap;
+      background: linear-gradient(135deg, #2563ff 0%, #145cff 100%);
+      border-radius: 9px;
+      box-shadow: 0 9px 18px rgba(20, 99, 255, 0.18);
       cursor: pointer;
     }
 
-    .safety-switch {
-      position: relative;
-      display: inline-flex;
-      width: 48px;
-      height: 26px;
-      align-items: center;
-      padding: 2px;
-      background: #1463ff;
-      border-radius: 999px;
-      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
+    .writeback-action svg {
+      width: 15px;
+      height: 15px;
+      flex: 0 0 auto;
+      stroke-width: 2.5;
     }
 
-    .safety-switch::after {
-      content: "";
-      width: 22px;
-      height: 22px;
-      margin-left: auto;
-      background: #ffffff;
-      border-radius: 999px;
-      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.18);
-    }
-
-    .safety-status {
-      display: inline-flex;
-      min-height: 24px;
-      align-items: center;
-      justify-content: center;
-      padding: 0 10px;
-      color: #15803d;
+    .writeback-action .row-title {
+      color: #ffffff;
       font-size: 12px;
-      font-weight: 900;
-      white-space: nowrap;
-      background: #edf8ed;
-      border-radius: 9px;
+      line-height: 1;
+    }
+
+    .writeback-action:disabled {
+      color: #ffffff;
+      background: #b8c5d8;
+      box-shadow: none;
+      cursor: default;
     }
 
     .bulk-actions {
@@ -2304,12 +2299,12 @@
           <svg><use href="#icon-shield-check"></use></svg>
         </span>
         <div>
-          <h2 class="writeback-title" id="syncTitle">写回安全</h2>
-          <p class="writeback-desc">执行写回操作前弹窗确认</p>
+          <h2 class="writeback-title" id="syncTitle">Chrome 写回</h2>
+          <p class="writeback-desc" id="syncBackCount">暂无待写回</p>
         </div>
-        <button class="safety-toggle" id="btnSyncBack" type="button" title="安全写回 Chrome">
-          <span class="safety-switch" aria-hidden="true"></span>
-          <span class="safety-status row-title" id="syncBackCount">已开启</span>
+        <button class="writeback-action" id="btnSyncBack" type="button" title="写回 Chrome" disabled>
+          <svg aria-hidden="true"><use href="#icon-folder-arrow"></use></svg>
+          <span class="row-title">写回 Chrome</span>
         </button>
       </section>
 

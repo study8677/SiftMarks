@@ -341,7 +341,7 @@ export default function RescuePage() {
       const ops = Array.isArray(data.ops) ? data.ops : [];
       setSyncResult({ count, ops });
       setNotice(count > 0
-        ? `已准备 ${count} 项待写回 Chrome。网页没有 Chrome 书签权限，请打开 SiftMarks 插件弹窗并点击“安全写回 Chrome”完成写回。`
+        ? `已准备 ${count} 项待写回 Chrome。网页没有 Chrome 书签权限，请打开 SiftMarks 插件弹窗并点击“写回 Chrome”完成写回。`
         : '当前没有需要导出回 Chrome 的改动。'
       );
     } catch (err) {
@@ -621,7 +621,7 @@ export default function RescuePage() {
           <p className="mt-1 text-sm text-muted">这里只预览待写回影响；预览不会修改 Chrome。</p>
           {syncResult.count > 0 && (
             <>
-              <p className="mt-1 text-sm text-muted">真正写入 Chrome 仍需在 SiftMarks 插件弹窗点击“导出回 Chrome / 安全写回 Chrome”。</p>
+              <p className="mt-1 text-sm text-muted">真正写入 Chrome 仍需在 SiftMarks 插件弹窗点击“写回 Chrome”。</p>
               <div className="mt-3 space-y-2">
                 {syncResult.ops.map((op) => (
                   <div key={op.id} className="rounded-lg border border-[#b9d3ff] bg-white/85 px-3 py-2 text-sm">

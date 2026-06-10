@@ -147,7 +147,7 @@ http://localhost:4399/rescue
 1. 在 Web 面板接受建议。
 2. 预览或准备待写回 Chrome 的计划。
 3. 打开 SiftMarks Chrome 扩展。
-4. 点击 **安全写回 Chrome**。
+4. 点击 **写回 Chrome**。
 5. 在确认弹窗里确认。
 
 支持写回：

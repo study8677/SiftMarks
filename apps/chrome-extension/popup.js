@@ -398,8 +398,9 @@ function optimizationLabel(count) {
 }
 
 function syncBackLabel(count) {
-  if (!Number.isFinite(count) || count <= 0) return '已开启';
-  return `${count.toLocaleString()}项待写回`;
+  if (!Number.isFinite(count)) return '未连接';
+  if (count <= 0) return '暂无待写回';
+  return `${count.toLocaleString()} 项待写回`;
 }
 
 function setText(element, text) {
@@ -467,6 +468,9 @@ function updateReviewActionState() {
   if (els.btnUndoAcceptedSuggestions) {
     els.btnUndoAcceptedSuggestions.disabled =
       lastPopupAcceptedSuggestionIds.length <= 0 && syncBackSuggestionCount <= 0;
+  }
+  if (els.btnSyncBack) {
+    els.btnSyncBack.disabled = syncBackSuggestionCount <= 0;
   }
 }
 
@@ -935,7 +939,7 @@ async function undoAcceptedSuggestionsFromPopup() {
 async function syncBackToBrowser() {
   if (
     syncBackSuggestionCount > 0 &&
-    !confirm(`将安全写回 Chrome ${syncBackSuggestionCount.toLocaleString()} 项改动。继续吗？`)
+    !confirm(`将写回 Chrome ${syncBackSuggestionCount.toLocaleString()} 项改动。继续吗？`)
   ) {
     return;
   }
@@ -958,7 +962,7 @@ async function syncBackToBrowser() {
     } else if (failed > 0) {
       showStatus(`已写回 ${applied} 项，${failed} 项失败`, 'error');
     } else {
-      showStatus(`已安全写回 Chrome：${applied} 项`);
+      showStatus(`已写回 Chrome：${applied} 项`);
     }
 
     await loadPanelState();
@@ -966,6 +970,7 @@ async function syncBackToBrowser() {
     showStatus('写回失败，请确认插件权限和本地服务', 'error');
   } finally {
     restore();
+    updateReviewActionState();
   }
 }
 

@@ -126,7 +126,7 @@ export const zh = {
     syncRemoved: (n: number) => `${n} 个删除`,
     syncBackup: (path: string) => `原始书签已备份到: ${path}`,
     syncReady: (n: number) => `${n} 个 Chrome 书签操作已准备好。`,
-    syncUseExtension: '请打开 SiftMarks Chrome 扩展，点击「同步回 Chrome」来真正写入浏览器书签栏。',
+    syncUseExtension: '请打开 SiftMarks Chrome 扩展，点击「写回 Chrome」来真正写入浏览器书签栏。',
     syncNoOps: '没有需要写回 Chrome 的操作。',
     noPending: '没有待处理的建议。你的书签很整洁！',
     clickToScan: '点击「生成整理建议」来发现改进空间。',
